@@ -33,10 +33,6 @@ try {
   throw "Backend health check failed at $BackendUrl/api/health. Start the API first with: npm run dev:api"
 }
 
-if (!(Test-Path ".vercel\project.json")) {
-  throw "Vercel project is not linked. Run: npx vercel link"
-}
-
 Write-Host "Checking Vercel access..."
 Invoke-Vercel @("whoami") | Out-Null
 
