@@ -34,10 +34,7 @@ try {
 }
 
 if (!(Test-Path ".vercel\project.json")) {
-  New-Item -ItemType Directory -Force ".vercel" | Out-Null
-  '{"projectId":"prj_xM8a8KNxeOlAp6CEhBFbvlz1ZCpp","orgId":"team_Rf2LBhvG6PLsoXOcT8PJc6Yk","projectName":"aqma-board"}' |
-    Set-Content ".vercel\project.json" -Encoding UTF8
-  Write-Host "Created .vercel\project.json for aqma-board."
+  throw "Vercel project is not linked. Run: npx vercel link"
 }
 
 Write-Host "Checking Vercel access..."
