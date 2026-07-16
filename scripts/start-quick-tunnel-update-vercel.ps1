@@ -83,28 +83,28 @@ if (!$tunnelUrl) {
 Write-Host "Tunnel URL: $tunnelUrl"
 Write-Host "Updating Vercel environment variable $EnvName..."
 
-foreach ($environment in $VercelEnvironments) {
-  Write-Host "Setting $environment..."
-  Invoke-Vercel @(
-    "env", "add", $EnvName, $environment,
-    "--value", $tunnelUrl,
-    "--force",
-    "--yes"
-  )
-}
-
-if (!$SkipDeploy) {
-  Write-Host "Redeploying production so Vite uses the new API URL..."
-  Invoke-Vercel @("--prod", "--yes")
-}
-
-Write-Host ""
-Write-Host "Done. Keep this PowerShell window open."
-Write-Host "Current API tunnel: $tunnelUrl"
-Write-Host "Cloudflared process id: $($process.Id)"
-Write-Host "Press Ctrl+C to stop this script and then stop the tunnel process if needed."
-
 try {
+  foreach ($environment in $VercelEnvironments) {
+    Write-Host "Setting $environment..."
+    Invoke-Vercel @(
+      "env", "add", $EnvName, $environment,
+      "--value", $tunnelUrl,
+      "--force",
+      "--yes"
+    )
+  }
+
+  if (!$SkipDeploy) {
+    Write-Host "Redeploying production so Vite uses the new API URL..."
+    Invoke-Vercel @("--prod", "--yes")
+  }
+
+  Write-Host ""
+  Write-Host "Done. Keep this PowerShell window open."
+  Write-Host "Current API tunnel: $tunnelUrl"
+  Write-Host "Cloudflared process id: $($process.Id)"
+  Write-Host "Press Ctrl+C to stop this script and the tunnel."
+
   Wait-Process -Id $process.Id
 } finally {
   if (!$process.HasExited) {
