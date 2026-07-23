@@ -75,8 +75,13 @@ if ($VercelToken) {
 $stdoutPath = Join-Path $repoRoot "backend-service.log"
 $stderrPath = Join-Path $repoRoot "backend-service.err.log"
 
-& $nssm stop $ServiceName 2>$null | Out-Null
-& $nssm remove $ServiceName confirm 2>$null | Out-Null
+if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
+  Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
+  & $nssm remove $ServiceName confirm
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to remove existing service: $ServiceName"
+  }
+}
 
 & $nssm install $ServiceName "powershell.exe" ($arguments -join " ")
 if ($LASTEXITCODE -ne 0) {
