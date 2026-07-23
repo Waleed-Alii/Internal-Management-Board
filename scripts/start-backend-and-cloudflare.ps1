@@ -62,6 +62,10 @@ Write-Host "Starting AQMA backend on $backendUrl..."
 $apiOut = Join-Path $repoRoot "api-local.log"
 $apiErr = Join-Path $repoRoot "api-local.err.log"
 Remove-Item $apiOut, $apiErr -ErrorAction SilentlyContinue
+$previousSameSite = $env:SESSION_COOKIE_SAMESITE
+$previousSecure = $env:SESSION_COOKIE_SECURE
+$env:SESSION_COOKIE_SAMESITE = "None"
+$env:SESSION_COOKIE_SECURE = "true"
 $apiProcess = Start-Process `
   -FilePath npm.cmd `
   -ArgumentList @("run", "dev:api") `
@@ -70,6 +74,8 @@ $apiProcess = Start-Process `
   -RedirectStandardError $apiErr `
   -WindowStyle Hidden `
   -PassThru
+$env:SESSION_COOKIE_SAMESITE = $previousSameSite
+$env:SESSION_COOKIE_SECURE = $previousSecure
 
 try {
   $deadline = (Get-Date).AddSeconds(30)
