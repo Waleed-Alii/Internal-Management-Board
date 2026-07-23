@@ -107,38 +107,52 @@ try {
     throw "Backend health check failed at $backendUrl/api/health after 30 seconds.`n$log"
   }
 
-  Write-Host "Starting Cloudflare tunnel..."
-  $tunnelOut = Join-Path $env:TEMP "aqma-cloudflared-out.log"
-  $tunnelErr = Join-Path $env:TEMP "aqma-cloudflared-err.log"
-  Remove-Item $tunnelOut, $tunnelErr -ErrorAction SilentlyContinue
-
-  $tunnelProcess = Start-Process `
-    -FilePath $cloudflared `
-    -ArgumentList @("tunnel", "--url", $backendUrl) `
-    -RedirectStandardOutput $tunnelOut `
-    -RedirectStandardError $tunnelErr `
-    -WindowStyle Hidden `
-    -PassThru
-
   $tunnelUrl = $null
-  $deadline = (Get-Date).AddSeconds(120)
-  while ((Get-Date) -lt $deadline) {
-    if ($tunnelProcess.HasExited) {
+  $tunnelAttempt = 0
+  $retryDelaySeconds = 60
+  while (!$tunnelUrl) {
+    $tunnelAttempt += 1
+    Write-Host "Starting Cloudflare tunnel..."
+    $tunnelOut = Join-Path $env:TEMP "aqma-cloudflared-out.log"
+    $tunnelErr = Join-Path $env:TEMP "aqma-cloudflared-err.log"
+    Remove-Item $tunnelOut, $tunnelErr -ErrorAction SilentlyContinue
+
+    $tunnelProcess = Start-Process `
+      -FilePath $cloudflared `
+      -ArgumentList @("tunnel", "--url", $backendUrl) `
+      -RedirectStandardOutput $tunnelOut `
+      -RedirectStandardError $tunnelErr `
+      -WindowStyle Hidden `
+      -PassThru
+
+    $deadline = (Get-Date).AddSeconds(120)
+    while ((Get-Date) -lt $deadline) {
+      if ($tunnelProcess.HasExited) {
+        break
+      }
+
+      $logText = (Get-Content $tunnelOut, $tunnelErr -ErrorAction SilentlyContinue) -join [Environment]::NewLine
+      $match = [regex]::Match($logText, "https://[a-z0-9-]+\.trycloudflare\.com")
+      if ($match.Success) {
+        $tunnelUrl = $match.Value
+        break
+      }
+      Start-Sleep -Seconds 2
+    }
+
+    if (!$tunnelUrl) {
+      if ($tunnelProcess -and !$tunnelProcess.HasExited) {
+        Stop-Process -Id $tunnelProcess.Id -Force -ErrorAction SilentlyContinue
+      }
       $log = (Get-Content $tunnelOut, $tunnelErr -ErrorAction SilentlyContinue) -join [Environment]::NewLine
-      throw "cloudflared exited before creating a tunnel URL.`n$log"
+      $isRateLimited = $log -match "429|Too Many Requests"
+      $nextDelay = if ($isRateLimited) { [Math]::Min($retryDelaySeconds, 900) } else { 30 }
+      Write-Warning "Cloudflare tunnel attempt $tunnelAttempt did not create a tunnel URL. Retrying in $nextDelay seconds."
+      if ($isRateLimited) {
+        $retryDelaySeconds = [Math]::Min($retryDelaySeconds * 2, 900)
+      }
+      Start-Sleep -Seconds $nextDelay
     }
-
-    $logText = (Get-Content $tunnelOut, $tunnelErr -ErrorAction SilentlyContinue) -join [Environment]::NewLine
-    $match = [regex]::Match($logText, "https://[a-z0-9-]+\.trycloudflare\.com")
-    if ($match.Success) {
-      $tunnelUrl = $match.Value
-      break
-    }
-    Start-Sleep -Seconds 2
-  }
-
-  if (!$tunnelUrl) {
-    throw "Timed out waiting for a trycloudflare.com URL."
   }
 
   Write-Host "Backend: $backendUrl"
