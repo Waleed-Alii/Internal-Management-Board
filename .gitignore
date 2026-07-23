@@ -20,6 +20,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+vite-local*.log
+api-local*.log
 
 # OS/editor noise
 .DS_Store

@@ -22,7 +22,6 @@ import {
   Moon,
   Phone,
   Palette,
-  ShieldCheck,
   Search,
   Settings,
   Sun,
@@ -98,153 +97,411 @@ const kanbanColumns = [
   {
     id: 'todo',
     title: 'To Do',
-    cards: [
-      {
-        id: 'AQMA-108',
-        title: 'Confirm intake checklist for new site audits',
-        tag: 'Audit setup',
-        project: 'CLM Core Build',
-        owner: 'Waleed',
-        priority: 'High',
-        due: 'Today',
-        progress: 20,
-        comments: 1,
-      },
-      {
-        id: 'AQMA-116',
-        title: 'Prepare evidence folder template',
-        tag: 'Documentation',
-        project: 'AQMA Internal Management',
-        owner: 'Sara',
-        priority: 'Medium',
-        due: 'Jul 17',
-        progress: 10,
-        comments: 0,
-      },
-      {
-        id: 'AQMA-124',
-        title: 'Review backlog labels and escalation tags',
-        tag: 'Workflow',
-        project: 'CLM Core Build',
-        owner: 'Ethan',
-        priority: 'Low',
-        due: 'Jul 20',
-        progress: 0,
-        comments: 1,
-      },
-    ],
+    cards: [],
   },
   {
     id: 'progress',
     title: 'In Progress',
-    cards: [
-      {
-        id: 'AQMA-097',
-        title: 'Update Kanban rules for field coordinators',
-        tag: 'Board policy',
-        project: 'AQMA Internal Management',
-        owner: 'Leo',
-        priority: 'High',
-        due: 'Tomorrow',
-        progress: 62,
-        comments: 4,
-      },
-      {
-        id: 'AQMA-103',
-        title: 'Map reporting metrics to dashboard cards',
-        tag: 'Analytics',
-        project: 'Automation Efforts 2026',
-        owner: 'Nina',
-        priority: 'Medium',
-        due: 'Jul 18',
-        progress: 48,
-        comments: 3,
-      },
-    ],
+    cards: [],
   },
   {
     id: 'assistance',
     title: 'Assistance',
-    cards: [
-      {
-        id: 'AQMA-112',
-        title: 'Need PKI team input on certificate renewal flow',
-        tag: 'PKI Infrastructure',
-        project: 'Security / Infrastructure',
-        owner: 'Omar',
-        priority: 'Medium',
-        due: 'Jul 18',
-        progress: 35,
-        comments: 6,
-      },
-    ],
+    cards: [],
   },
   {
     id: 'blocked',
     title: 'Blocked',
-    cards: [
-      {
-        id: 'AQMA-089',
-        title: 'Validate completed ticket quality sample',
-        tag: 'Quality',
-        project: 'CLM Core Build',
-        owner: 'Maya',
-        priority: 'High',
-        due: 'Jul 16',
-        progress: 86,
-        comments: 2,
-      },
-      {
-        id: 'AQMA-101',
-        title: 'Approve notification copy for overdue work',
-        tag: 'Comms',
-        project: 'AQMA Internal Management',
-        owner: 'Omar',
-        priority: 'Medium',
-        due: 'Jul 19',
-        progress: 74,
-        comments: 1,
-      },
-    ],
+    cards: [],
   },
   {
     id: 'done',
     title: 'Done',
-    cards: [
-      {
-        id: 'AQMA-081',
-        title: 'Publish first AQMA board structure',
-        tag: 'Release',
-        project: 'Cert Dashboard',
-        owner: 'Waleed',
-        priority: 'Medium',
-        due: 'Jul 12',
-        progress: 100,
-        comments: 38,
-      },
-      {
-        id: 'AQMA-084',
-        title: 'Connect profile settings to local state',
-        tag: 'Account',
-        project: 'Automation Efforts 2026',
-        owner: 'Waleed',
-        priority: 'Low',
-        due: 'Jul 14',
-        progress: 100,
-        comments: 16,
-      },
-    ],
+    cards: [],
   },
 ];
 
-const initialBacklogItems = [
-  { id: 'AQMA-128', title: 'Add saved board filters', owner: 'Nina', priority: 'Medium', estimate: '3 pts' },
-  { id: 'AQMA-129', title: 'Create ticket detail drawer', owner: 'Ethan', priority: 'High', estimate: '5 pts' },
-  { id: 'AQMA-130', title: 'Add attachment preview state', owner: 'Sara', priority: 'Low', estimate: '2 pts' },
-  { id: 'AQMA-131', title: 'Define audit export fields', owner: 'Omar', priority: 'Medium', estimate: '3 pts' },
+const priorityOptions = ['Low', 'Medium', 'High'];
+const epicOptions = [
+  'TinyPilot Refactoring',
+  'Automation Efforts 2026',
+  'CLM Core Build',
+  'CLM UI/UX',
+  'PKI Infrastructure',
+  'Frontend / UI',
+  'Aqma Corp Website fixes',
+  'Internal Management',
+];
+const taskTypeOptions = [
+  'Backend',
+  'Database',
+  'Data Pipeline',
+  'Frontend',
+  'Feature / UI',
+  'Security / Infrastructure',
+  'UI/UX update',
+  'Automation',
+  'Migration',
+  'Deployment',
+  'PKI',
+  'Monitoring',
+];
+const defaultActiveSubmenus = {
+  dashboard: 'overview',
+  board: 'kanban',
+  analytics: 'metrics',
+  profile: 'profile-settings',
+};
+const defaultUserPreferences = {
+  theme: 'light',
+  wallpaper: 'default',
+  avatar: { type: 'preset', value: 'blue' },
+  navigation: { activeTab: 'dashboard', activeSubmenus: defaultActiveSubmenus },
+};
+let boardStateCache = null;
+const notificationLimit = 80;
+
+const initialBacklogItems = [];
+
+const defaultAuthApiBase = `${window.location.protocol}//${window.location.hostname}:8787`;
+const authApiBase = import.meta.env.VITE_AUTH_API_URL ?? defaultAuthApiBase;
+const localDevBypass = import.meta.env.VITE_LOCAL_DEV_BYPASS === 'true';
+if (import.meta.env.PROD && localDevBypass) {
+  throw new Error('VITE_LOCAL_DEV_BYPASS must be false in production builds.');
+}
+const authExpiredEventName = 'aqma-auth-expired';
+
+function notifyAuthExpired() {
+  window.dispatchEvent(new Event(authExpiredEventName));
+}
+const hiddenDirectoryUsernames = new Set(['administrator', 'guest', 'krbtgt', 'test']);
+const seniorGraphNames = [
+  { key: 'talha', match: ['talha'], fallbackName: 'Muhammad Talha' },
+  { key: 'shaharyar', match: ['shaharyar', 'sheryiar', 'sheriyar'], fallbackName: 'Shaharyar Raza' },
+  { key: 'waleed', match: ['waleed'], fallbackName: 'Waleed Ali' },
 ];
 
-const authApiBase = import.meta.env.VITE_AUTH_API_URL ?? 'http://127.0.0.1:8787';
+function normalizedUsername(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function userStorageKey(prefix, username) {
+  return `${prefix}:${encodeURIComponent(normalizedUsername(username))}`;
+}
+
+function sanitizeUserPreferences(value) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const activeTab = ['dashboard', 'board', 'analytics', 'profile'].includes(raw.navigation?.activeTab)
+    ? raw.navigation.activeTab
+    : 'dashboard';
+  const submenuOptions = {
+    dashboard: ['overview', 'activity'],
+    board: ['kanban', 'backlog'],
+    analytics: ['metrics', 'charts'],
+    profile: ['profile-settings', 'app-settings'],
+  };
+  const activeSubmenus = Object.fromEntries(
+    Object.entries(submenuOptions).map(([tab, options]) => [
+      tab,
+      options.includes(raw.navigation?.activeSubmenus?.[tab]) ? raw.navigation.activeSubmenus[tab] : defaultActiveSubmenus[tab],
+    ]),
+  );
+  const avatar = raw.avatar?.type === 'preset' && presetAvatars.some((item) => item.id === raw.avatar.value)
+    ? { type: 'preset', value: raw.avatar.value }
+    : raw.avatar?.type === 'image' && /^data:image\/(png|jpeg|webp);base64,/i.test(raw.avatar.value ?? '')
+      ? { type: 'image', value: raw.avatar.value }
+      : defaultUserPreferences.avatar;
+
+  return {
+    theme: ['light', 'dark'].includes(raw.theme) ? raw.theme : 'light',
+    wallpaper: wallpapers.some((item) => item.id === raw.wallpaper) ? raw.wallpaper : 'default',
+    avatar,
+    navigation: { activeTab, activeSubmenus },
+  };
+}
+
+function readUserPreferences(username) {
+  if (!username) return defaultUserPreferences;
+  try {
+    const raw = localStorage.getItem(userStorageKey('aqmaPreferences', username));
+    return raw ? sanitizeUserPreferences(JSON.parse(raw)) : defaultUserPreferences;
+  } catch {
+    return defaultUserPreferences;
+  }
+}
+
+function readLastUserPreferences() {
+  try {
+    const lastUsername = localStorage.getItem('aqmaLastUsername') ?? '';
+    return readUserPreferences(lastUsername);
+  } catch {
+    return defaultUserPreferences;
+  }
+}
+
+function writeUserPreferences(username, preferences) {
+  if (!username) return;
+  try {
+    localStorage.setItem(userStorageKey('aqmaPreferences', username), JSON.stringify(sanitizeUserPreferences(preferences)));
+  } catch {
+    // The server remains authoritative when browser storage is unavailable or full.
+  }
+}
+
+function buildBoardState(tickets, username) {
+  const safeTickets = Array.isArray(tickets) ? tickets : [];
+  return {
+    username,
+    columns: kanbanColumns.map((column) => ({
+      ...column,
+      cards: safeTickets
+        .filter((ticket) => ticket.status === column.id)
+        .map((ticket) => ({ ...ticket, columnId: column.id, status: column.title })),
+    })),
+    backlog: safeTickets
+      .filter((ticket) => ticket.status === 'backlog')
+      .map((ticket) => ({ ...ticket, columnId: 'backlog', status: 'Backlog' })),
+    savedAt: Date.now(),
+  };
+}
+
+function readBoardState(username) {
+  if (boardStateCache?.username === username) return boardStateCache;
+  if (!username) return null;
+  try {
+    const raw = sessionStorage.getItem(userStorageKey('aqmaBoard', username));
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed?.username !== username || !Array.isArray(parsed.columns) || !Array.isArray(parsed.backlog)) return null;
+    boardStateCache = parsed;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeBoardState(state) {
+  boardStateCache = state;
+  if (!state?.username) return;
+  try {
+    sessionStorage.setItem(userStorageKey('aqmaBoard', state.username), JSON.stringify(state));
+  } catch {
+    // In-memory cache still prevents navigation flashes within this session.
+  }
+}
+
+function readNotifications(username) {
+  if (!username) return [];
+  try {
+    const raw = localStorage.getItem(userStorageKey('aqmaNotifications', username));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, notificationLimit) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeNotifications(username, notifications) {
+  if (!username) return;
+  try {
+    localStorage.setItem(userStorageKey('aqmaNotifications', username), JSON.stringify(notifications.slice(0, notificationLimit)));
+  } catch {
+    // Notifications are helpful but should not block the application.
+  }
+}
+
+function notificationId() {
+  return `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createNotification({ type = 'info', title, message, ticketId = '', ticketTitle = '', actor = '', createdAt = new Date().toISOString() }) {
+  return {
+    id: notificationId(),
+    type,
+    title,
+    message,
+    ticketId,
+    ticketTitle,
+    actor,
+    createdAt,
+    read: false,
+  };
+}
+
+function mergeNotifications(existing, incoming) {
+  const seen = new Set();
+  return [...incoming, ...existing]
+    .filter((item) => {
+      const fingerprint = `${item.type}|${item.title}|${item.message}|${item.ticketId}|${item.createdAt}`;
+      if (seen.has(fingerprint)) return false;
+      seen.add(fingerprint);
+      return true;
+    })
+    .slice(0, notificationLimit);
+}
+
+function ticketSnapshotForNotifications(ticket) {
+  return {
+    id: ticket.id,
+    title: ticket.title ?? '',
+    owner: ticket.owner ?? '',
+    ownerUsername: ticket.ownerUsername ?? '',
+    assignedTo: ticket.assignedTo ?? '',
+    assignedToUsername: ticket.assignedToUsername ?? '',
+    priority: ticket.priority ?? '',
+    project: ticket.project ?? '',
+    tag: ticket.tag ?? '',
+    status: ticket.status ?? '',
+    description: ticket.description ?? '',
+    comments: Number(ticket.comments ?? ticket.commentList?.length ?? 0),
+    files: Number(ticket.files?.length ?? 0),
+    updatedAt: ticket.updatedAt ?? '',
+  };
+}
+
+function readTicketNotificationSnapshot(username) {
+  if (!username) return null;
+  try {
+    const raw = localStorage.getItem(userStorageKey('aqmaTicketSnapshot', username));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeTicketNotificationSnapshot(username, tickets) {
+  if (!username) return;
+  try {
+    const snapshot = Object.fromEntries((tickets ?? []).map((ticket) => [ticket.id, ticketSnapshotForNotifications(ticket)]));
+    localStorage.setItem(userStorageKey('aqmaTicketSnapshot', username), JSON.stringify(snapshot));
+  } catch {
+    // Snapshot diffing is a notification enhancement only.
+  }
+}
+
+function profileSnapshotForNotifications(profile) {
+  return {
+    name: profile.name ?? '',
+    role: profile.role ?? '',
+    email: profile.email ?? '',
+    phone: profile.phone ?? '',
+    department: profile.department ?? '',
+    office: profile.office ?? '',
+    managerDn: profile.managerDn ?? '',
+  };
+}
+
+function createProfileDiffNotifications(username, nextProfile) {
+  if (!username) return [];
+  const key = userStorageKey('aqmaProfileSnapshot', username);
+  const nextSnapshot = profileSnapshotForNotifications(nextProfile);
+  let previousSnapshot = null;
+  try {
+    previousSnapshot = JSON.parse(localStorage.getItem(key) ?? 'null');
+    localStorage.setItem(key, JSON.stringify(nextSnapshot));
+  } catch {
+    return [];
+  }
+  if (!previousSnapshot) return [];
+
+  const labels = {
+    name: 'name',
+    role: 'role',
+    email: 'email',
+    phone: 'phone',
+    department: 'department',
+    office: 'office',
+    managerDn: 'manager',
+  };
+  const changed = Object.keys(labels).filter((field) => previousSnapshot[field] !== nextSnapshot[field]);
+  if (changed.length === 0) return [];
+  return [
+    createNotification({
+      type: 'profile',
+      title: 'Profile updated',
+      message: `${changed.map((field) => labels[field]).slice(0, 2).join(', ')}${changed.length > 2 ? ` and ${changed.length - 2} more` : ''} changed for ${nextProfile.name}.`,
+      actor: nextProfile.name,
+    }),
+  ];
+}
+
+function notificationLabelForTicketChange(key, previous, next) {
+  const labels = {
+    title: 'title',
+    assignedTo: 'assignee',
+    priority: 'priority',
+    project: 'epic',
+    tag: 'task type',
+    status: 'status',
+    description: 'description',
+    comments: 'comments',
+    files: 'supporting files',
+  };
+  if (key === 'comments' && next.comments > previous.comments) return 'new comment';
+  if (key === 'files' && next.files > previous.files) return 'supporting file added';
+  return `${labels[key] ?? key} changed`;
+}
+
+function createTicketDiffNotifications(username, tickets) {
+  const previousSnapshot = readTicketNotificationSnapshot(username);
+  writeTicketNotificationSnapshot(username, tickets);
+  if (!previousSnapshot) return [];
+
+  return (tickets ?? []).flatMap((ticket) => {
+    const previous = previousSnapshot[ticket.id];
+    const next = ticketSnapshotForNotifications(ticket);
+    if (!previous) {
+      return [
+        createNotification({
+          type: 'ticket',
+          title: 'New ticket added',
+          message: `${next.title || ticket.id} is now on the board.`,
+          ticketId: ticket.id,
+          ticketTitle: next.title,
+          actor: next.owner,
+          createdAt: next.updatedAt || new Date().toISOString(),
+        }),
+      ];
+    }
+
+    const watchedFields = ['title', 'assignedTo', 'priority', 'project', 'tag', 'status', 'description', 'comments', 'files'];
+    const changedFields = watchedFields.filter((key) => previous[key] !== next[key]);
+    if (changedFields.length === 0) return [];
+
+    const firstChange = notificationLabelForTicketChange(changedFields[0], previous, next);
+    const remaining = changedFields.length > 1 ? ` and ${changedFields.length - 1} more update${changedFields.length - 1 === 1 ? '' : 's'}` : '';
+    return [
+      createNotification({
+        type: 'ticket',
+        title: 'Ticket updated',
+        message: `${next.title || ticket.id}: ${firstChange}${remaining}.`,
+        ticketId: ticket.id,
+        ticketTitle: next.title,
+        actor: next.assignedTo || next.owner,
+        createdAt: next.updatedAt || new Date().toISOString(),
+      }),
+    ];
+  });
+}
+
+function formatNotificationTime(value) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return '';
+  const diff = Date.now() - timestamp;
+  if (diff < 60_000) return 'Just now';
+  if (diff < 3_600_000) return `${Math.max(1, Math.round(diff / 60_000))}m ago`;
+  if (diff < 86_400_000) return `${Math.max(1, Math.round(diff / 3_600_000))}h ago`;
+  return `${Math.max(1, Math.round(diff / 86_400_000))}d ago`;
+}
+
+function isHiddenDirectoryUser(user) {
+  const username = String(user?.username ?? '').trim().toLowerCase();
+  const personText = normalizedPersonText(user).replace(/[\s_-]+/g, '');
+  return hiddenDirectoryUsernames.has(username) || personText.includes('ldapbind');
+}
+
+function normalizedPersonText(user) {
+  return `${user?.username ?? ''} ${user?.name ?? ''} ${user?.email ?? ''}`.toLowerCase();
+}
 
 function TopMenu({ activeTab, onSelectTab }) {
   return (
@@ -315,6 +572,107 @@ function AvatarView({ avatar, size = 24 }) {
   return <CircleUserRound size={size} strokeWidth={2.1} />;
 }
 
+function NotificationCenter({
+  notifications,
+  open,
+  unreadCount,
+  onToggle,
+  onClose,
+  onMarkAllRead,
+  onMarkRead,
+  onClear,
+}) {
+  const panelRef = useRef(null);
+  const buttonLabel = unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications, none unread';
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function handlePointerDown(event) {
+      if (!event.target.closest('.notification-menu-wrap')) onClose();
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    requestAnimationFrame(() => panelRef.current?.focus());
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+
+  return (
+    <div className="notification-menu-wrap">
+      <button
+        className={`notification-button ${open ? 'is-open' : ''} ${unreadCount > 0 ? 'has-unread' : ''}`}
+        type="button"
+        aria-label={buttonLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="notification-center"
+        onClick={onToggle}
+      >
+        <Bell size={20} strokeWidth={2.05} />
+        {unreadCount > 0 && <span className="notification-badge" aria-hidden="true" />}
+      </button>
+      {open && (
+        <section
+          id="notification-center"
+          className="notification-dropdown"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="notification-title"
+          tabIndex={-1}
+          ref={panelRef}
+        >
+          <header>
+            <div>
+              <h2 id="notification-title">Notifications</h2>
+              <p>{unreadCount > 0 ? `${unreadCount} unread update${unreadCount === 1 ? '' : 's'}` : 'All caught up'}</p>
+            </div>
+            <div className="notification-actions">
+              <button type="button" onClick={onMarkAllRead} disabled={unreadCount === 0}>Mark read</button>
+              <button type="button" onClick={onClear} disabled={notifications.length === 0}>Clear</button>
+            </div>
+          </header>
+
+          <div className="notification-list" aria-live="polite">
+            {notifications.length === 0 ? (
+              <div className="notification-empty">
+                <Bell size={22} />
+                <strong>No notifications</strong>
+                <span>Ticket changes, assignments, comments, files, and profile updates will appear here.</span>
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <button
+                  className={`notification-item ${notification.read ? '' : 'is-unread'}`}
+                  type="button"
+                  key={notification.id}
+                  onClick={() => onMarkRead(notification.id)}
+                  aria-label={`${notification.read ? 'Read' : 'Unread'} notification: ${notification.title}. ${notification.message}. ${formatNotificationTime(notification.createdAt)}`}
+                >
+                  <span className={`notification-dot notification-dot--${notification.type}`} aria-hidden="true" />
+                  <span>
+                    <strong>{notification.title}</strong>
+                    <small>{notification.message}</small>
+                    <em>{formatNotificationTime(notification.createdAt)}{notification.actor ? ` · ${notification.actor}` : ''}</em>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function MainInterface({
   tab,
   submenu,
@@ -329,6 +687,9 @@ function MainInterface({
   companyGraphOpen,
   setCompanyGraphOpen,
   pushHistory,
+  authToken,
+  localMode,
+  onNotify,
 }) {
   return (
     <main className="main-interface glass-panel" aria-live="polite">
@@ -346,17 +707,20 @@ function MainInterface({
           companyGraphOpen={companyGraphOpen}
           setCompanyGraphOpen={setCompanyGraphOpen}
           pushHistory={pushHistory}
+          authToken={authToken}
+          localMode={localMode}
+          onNotify={onNotify}
         />
       ) : (
-        <DefaultPanel tab={tab} submenu={submenu} />
+        <DefaultPanel tab={tab} submenu={submenu} profile={profile} authToken={authToken} localMode={localMode} onNotify={onNotify} />
       )}
     </main>
   );
 }
 
-function DefaultPanel({ tab, submenu }) {
+function DefaultPanel({ tab, submenu, profile, authToken, localMode, onNotify }) {
   if (tab.id === 'board') {
-    return <ProjectBoardPanel submenu={submenu} />;
+    return <ProjectBoardPanel submenu={submenu} profile={profile} authToken={authToken} localMode={localMode} onNotify={onNotify} />;
   }
 
   const title = submenu ? submenu.label : tab.title;
@@ -370,22 +734,183 @@ function DefaultPanel({ tab, submenu }) {
   );
 }
 
-function ProjectBoardPanel({ submenu }) {
-  const [boardColumns, setBoardColumns] = useState(kanbanColumns);
-  const [backlogItems, setBacklogItems] = useState(initialBacklogItems);
+function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify }) {
+  const currentUserName = profile?.name || 'User';
+  const currentUsername = profile?.username || '';
+  const initialBoardState = readBoardState(currentUsername);
+  const [boardColumns, setBoardColumns] = useState(() => initialBoardState?.columns ?? kanbanColumns);
+  const [backlogItems, setBacklogItems] = useState(() => initialBoardState?.backlog ?? initialBacklogItems);
+  const [boardError, setBoardError] = useState('');
   const [selectedUser, setSelectedUser] = useState('all');
   const [draggedTicket, setDraggedTicket] = useState(null);
   const [dropTargetColumn, setDropTargetColumn] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [createColumnId, setCreateColumnId] = useState(null);
+  const ticketMutationVersionRef = useRef(new Map());
+  const boardRevisionRef = useRef(0);
+  const [teamUsers, setTeamUsers] = useState(() => [
+    {
+      username: profile?.username || profile?.email || currentUserName,
+      name: currentUserName,
+      email: profile?.email || '',
+      role: profile?.role || '',
+    },
+  ]);
   const users = useMemo(
-    () => Array.from(new Set(boardColumns.flatMap((column) => column.cards.map((card) => card.owner)))).sort(),
-    [boardColumns],
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...teamUsers.filter((user) => !isHiddenDirectoryUser(user)).map((user) => user.name),
+            ...boardColumns.flatMap((column) =>
+              column.cards.flatMap((card) => [card.owner, card.assignedTo].filter(Boolean)),
+            ),
+          ].filter(Boolean),
+        ),
+      ).sort(),
+    [boardColumns, teamUsers],
   );
   const nextTicketId = useMemo(() => {
-    const nextCount = boardColumns.reduce((sum, column) => sum + column.cards.length, 0) + backlogItems.length + 1;
-    return `AQMA-${String(130 + nextCount).padStart(3, '0')}`;
-  }, [boardColumns, backlogItems.length]);
+    const ticketIds = [
+      ...boardColumns.flatMap((column) => column.cards.map((card) => card.id)),
+      ...backlogItems.map((item) => item.id),
+    ];
+    const maxId = ticketIds.reduce((max, id) => {
+      const match = /^AQMA-(\d+)$/i.exec(String(id ?? ''));
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+
+    return `AQMA-${String(maxId + 1).padStart(4, '0')}`;
+  }, [boardColumns, backlogItems]);
+  const boardRecordCount = useMemo(
+    () => boardColumns.reduce((total, column) => total + column.cards.length, 0) + backlogItems.length,
+    [boardColumns, backlogItems],
+  );
+
+  async function boardRequest(path, options = {}) {
+    if (localMode) {
+      throw new Error('Backend persistence is disabled in local mode.');
+    }
+
+    const response = await fetch(`${authApiBase}${path}`, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        ...(authToken ? { 'X-CSRF-Token': authToken } : {}),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.headers ?? {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      if (response.status === 401) notifyAuthExpired();
+      throw new Error(data.error || 'Board request failed.');
+    }
+
+    return data;
+  }
+
+  function applyTickets(tickets) {
+    const nextState = buildBoardState(tickets, currentUsername);
+    setBoardColumns(nextState.columns);
+    setBacklogItems(nextState.backlog);
+  }
+
+  function upsertLoadedTicket(ticket, { select = false } = {}) {
+    if (ticket.status === 'backlog') {
+      const backlogTicket = { ...ticket, columnId: 'backlog', status: 'Backlog' };
+      setBacklogItems((current) => {
+        const exists = current.some((item) => item.id === ticket.id);
+        return exists ? current.map((item) => (item.id === ticket.id ? backlogTicket : item)) : [...current, backlogTicket];
+      });
+      setBoardColumns((current) =>
+        current.map((column) => ({ ...column, cards: column.cards.filter((card) => card.id !== ticket.id) })),
+      );
+      setSelectedTicket((current) => (select || current?.id === ticket.id ? backlogTicket : current));
+      return;
+    }
+
+    const targetColumn = kanbanColumns.find((column) => column.id === ticket.status) ?? kanbanColumns[0];
+    const boardTicket = { ...ticket, columnId: targetColumn.id, status: targetColumn.title };
+
+    setBacklogItems((current) => current.filter((item) => item.id !== ticket.id));
+    setBoardColumns((current) =>
+      current.map((column) => {
+        const cards = column.cards.filter((card) => card.id !== ticket.id);
+        return column.id === targetColumn.id ? { ...column, cards: [...cards, boardTicket] } : { ...column, cards };
+      }),
+    );
+    setSelectedTicket((current) => (select || current?.id === ticket.id ? boardTicket : current));
+  }
+
+  useEffect(() => {
+    writeBoardState({ username: currentUsername, columns: boardColumns, backlog: backlogItems, savedAt: Date.now() });
+  }, [currentUsername, boardColumns, backlogItems]);
+
+  useEffect(() => {
+    if (!authToken || localMode) return;
+
+    const controller = new AbortController();
+    const loadRevision = boardRevisionRef.current;
+
+    async function loadTickets() {
+      setBoardError('');
+
+      try {
+        const data = await boardRequest('/api/tickets?includeFiles=true', { signal: controller.signal });
+        if (!controller.signal.aborted && boardRevisionRef.current === loadRevision) {
+          const loadedTickets = data.tickets ?? [];
+          createTicketDiffNotifications(currentUsername, loadedTickets).forEach((notification) => notifyBoardChange(notification));
+          applyTickets(loadedTickets);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) setBoardError(error.message);
+      }
+    }
+
+    loadTickets();
+
+    return () => {
+      controller.abort();
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (localMode) {
+      setTeamUsers([
+        {
+          username: profile?.username || profile?.email || currentUserName,
+          name: currentUserName,
+          email: profile?.email || '',
+          role: profile?.role || '',
+        },
+      ]);
+      return;
+    }
+    if (!authToken) return;
+
+    let cancelled = false;
+
+    async function loadTeamUsers() {
+      try {
+        const data = await boardRequest('/api/team');
+        if (!cancelled && Array.isArray(data.users) && data.users.length > 0) {
+          setTeamUsers(data.users.filter((user) => !isHiddenDirectoryUser(user)));
+        }
+      } catch (error) {
+        if (!cancelled && !String(error.message).toLowerCase().includes('directory listing is restricted')) {
+          setBoardError(error.message);
+        }
+      }
+    }
+
+    loadTeamUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, localMode, profile?.username, currentUserName]);
 
   function updateTicket(ticketId, updater) {
     setBoardColumns((currentColumns) =>
@@ -397,141 +922,401 @@ function ProjectBoardPanel({ submenu }) {
         }),
       })),
     );
+    setBacklogItems((current) => current.map((item) => (item.id === ticketId ? updater(item, { title: 'Backlog' }) : item)));
     setSelectedTicket((current) => {
       if (!current || current.id !== ticketId) return current;
       return updater(current, { title: current.status });
     });
   }
 
-  function createTicket(ticket) {
-    const targetColumnId = ticket.columnId ?? 'todo';
-    const targetColumn = boardColumns.find((column) => column.id === targetColumnId);
-    const newTicket = {
-      id: ticket.ticketId || nextTicketId,
-      title: ticket.title,
-      tag: ticket.tag || 'General',
-      project: ticket.project || 'AQMA Internal Management',
-      owner: ticket.owner || 'Waleed',
-      priority: ticket.priority || 'Medium',
-      description: ticket.description || '',
-      due: 'Unscheduled',
-      progress: targetColumn.id === 'done' ? 100 : 0,
-      comments: 0,
-      commentList: [],
-      files: [],
-    };
+  function notifyBoardChange(payload) {
+    if (payload?.selfAuthored) return;
+    onNotify?.(payload);
+  }
 
-    if (targetColumnId === 'backlog') {
-      const backlogTicket = {
-        ...newTicket,
-        estimate: ticket.estimate || '3 pts',
-      };
-      setBacklogItems((current) => [...current, backlogTicket]);
-      setCreateColumnId(null);
-      setSelectedTicket({ ...backlogTicket, status: 'Backlog', columnId: 'backlog' });
+  function describeTicketChange(changes) {
+    if (changes.columnId) return 'status changed';
+    if (changes.assignedTo || changes.assignedToUsername) return 'assignee changed';
+    if (changes.priority) return `priority changed to ${changes.priority}`;
+    if (changes.project) return 'epic changed';
+    if (changes.tag) return 'task type changed';
+    if (changes.title) return 'title changed';
+    if (changes.description) return 'description updated';
+    return 'details updated';
+  }
+
+  async function createTicket(ticket) {
+    boardRevisionRef.current += 1;
+    const targetColumnId = ticket.columnId ?? 'todo';
+    const missingFields = [
+      [ticket.title, 'Card title'],
+      [ticket.description, 'Card description'],
+      [ticket.ownerUsername || ticket.owner, 'Opened by'],
+      [ticket.assignedToUsername || ticket.assignedTo, 'Assigned to'],
+      [ticket.priority, 'Priority'],
+      [ticket.tag, 'Task type'],
+      [ticket.project, 'Epic'],
+      [targetColumnId, 'Status'],
+    ]
+      .filter(([value]) => !String(value ?? '').trim())
+      .map(([, label]) => label);
+
+    if (missingFields.length > 0) {
+      setBoardError(`Missing required fields: ${missingFields.join(', ')}.`);
       return;
     }
 
-    const safeTargetColumn = targetColumn ?? boardColumns[0];
-
-    setBoardColumns((currentColumns) =>
-      currentColumns.map((column) =>
-        column.id === safeTargetColumn.id ? { ...column, cards: [...column.cards, newTicket] } : column,
-      ),
-    );
-    setCreateColumnId(null);
-    setSelectedTicket({ ...newTicket, status: safeTargetColumn.title, columnId: safeTargetColumn.id });
-  }
-
-  function addTicketComment(ticketId, text) {
-    updateTicket(ticketId, (ticket) => {
-      const commentList = ticket.commentList ?? [];
-      const nextComment = {
-        id: `${ticketId}-comment-${commentList.length + 1}`,
-        author: 'Waleed',
-        text,
+    if (localMode) {
+      const targetColumn = boardColumns.find((column) => column.id === targetColumnId);
+      const nextCount = boardColumns.reduce((sum, column) => sum + column.cards.length, 0) + backlogItems.length + 1;
+      const newTicket = {
+        id: `LOCAL-${String(nextCount).padStart(3, '0')}`,
+        title: ticket.title,
+        tag: ticket.tag || '',
+        project: ticket.project || '',
+        owner: ticket.owner || currentUserName,
+        ownerUsername: ticket.ownerUsername || currentUsername,
+        assignedTo: ticket.assignedTo || '',
+        assignedToUsername: ticket.assignedToUsername || '',
+        priority: ticket.priority || '',
+        description: ticket.description || '',
+        due: 'Unscheduled',
+        progress: targetColumn?.id === 'done' ? 100 : 0,
+        comments: 0,
+        commentList: [],
+        files: [],
       };
-      return {
-        ...ticket,
-        commentList: [...commentList, nextComment],
-        comments: (ticket.comments ?? 0) + 1,
-      };
-    });
-  }
 
-  function addTicketFiles(ticketId, files) {
-    const uploadedFiles = Array.from(files).map((file) => ({
-      id: `${ticketId}-file-${file.name}-${file.size}`,
-      name: file.name,
-      size: file.size,
-      url: URL.createObjectURL(file),
-    }));
+      if (targetColumnId === 'backlog') {
+        const backlogTicket = { ...newTicket, estimate: ticket.estimate || '', status: 'Backlog', columnId: 'backlog' };
+        setBacklogItems((current) => [...current, backlogTicket]);
+        setCreateColumnId(null);
+        setSelectedTicket(backlogTicket);
+        notifyBoardChange({
+          type: 'ticket',
+          title: 'Ticket created',
+          message: `${backlogTicket.title} was added to Backlog.`,
+          ticketId: backlogTicket.id,
+          ticketTitle: backlogTicket.title,
+          actor: currentUserName,
+          selfAuthored: true,
+        });
+        return;
+      }
 
-    if (uploadedFiles.length === 0) return;
+      const safeTargetColumn = targetColumn ?? boardColumns[0];
+      const boardTicket = { ...newTicket, status: safeTargetColumn.title, columnId: safeTargetColumn.id };
 
-    updateTicket(ticketId, (ticket) => ({
-      ...(ticket.owner === 'Waleed'
-        ? { ...ticket, files: [...(ticket.files ?? []), ...uploadedFiles] }
-        : ticket),
-    }));
-  }
-
-  function updateTicketData(ticketId, changes) {
-    const targetColumnId = changes.columnId;
-    let updatedTicket = null;
-
-    setBoardColumns((currentColumns) => {
-      const sourceColumn = currentColumns.find((column) => column.cards.some((card) => card.id === ticketId));
-      const currentTicket = sourceColumn?.cards.find((card) => card.id === ticketId);
-
-      if (!sourceColumn || !currentTicket || currentTicket.owner !== 'Waleed') return currentColumns;
-
-      const nextTicket = {
-        ...currentTicket,
-        title: changes.title || currentTicket.title,
-        priority: changes.priority || currentTicket.priority,
-        project: changes.project || currentTicket.project,
-        tag: changes.tag || currentTicket.tag,
-      };
-      updatedTicket = nextTicket;
-
-      return currentColumns.map((column) => {
-        if (column.id === sourceColumn.id && column.id !== targetColumnId) {
-          return { ...column, cards: column.cards.filter((card) => card.id !== ticketId) };
-        }
-
-        if (column.id === sourceColumn.id) {
-          return { ...column, cards: column.cards.map((card) => (card.id === ticketId ? nextTicket : card)) };
-        }
-
-        if (column.id === targetColumnId) {
-          return { ...column, cards: [...column.cards, nextTicket] };
-        }
-
-        return column;
+      setBoardColumns((currentColumns) =>
+        currentColumns.map((column) =>
+          column.id === safeTargetColumn.id ? { ...column, cards: [...column.cards, boardTicket] } : column,
+        ),
+      );
+      setCreateColumnId(null);
+      setSelectedTicket(boardTicket);
+      notifyBoardChange({
+        type: 'ticket',
+        title: 'Ticket created',
+        message: `${boardTicket.title} was added to ${safeTargetColumn.title}.`,
+        ticketId: boardTicket.id,
+        ticketTitle: boardTicket.title,
+        actor: currentUserName,
+        selfAuthored: true,
       });
-    });
+      return;
+    }
 
-    if (updatedTicket) {
-      const status = columnsLabelFor(boardColumns, targetColumnId) ?? changes.status;
-      setSelectedTicket({ ...updatedTicket, status, columnId: targetColumnId });
+    try {
+      const data = await boardRequest('/api/tickets', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...ticket,
+          status: targetColumnId,
+        }),
+      });
+      upsertLoadedTicket(data.ticket, { select: true });
+      setCreateColumnId(null);
+      setBoardError('');
+      notifyBoardChange({
+        type: 'ticket',
+        title: 'Ticket created',
+        message: `${data.ticket.title} was added to the board.`,
+        ticketId: data.ticket.id,
+        ticketTitle: data.ticket.title,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+    } catch (error) {
+      setBoardError(error.message);
+      throw error;
     }
   }
 
-  function deleteTicket(ticketId) {
-    let removed = false;
-    setBoardColumns((currentColumns) =>
-      currentColumns.map((column) => {
-        const ticket = column.cards.find((card) => card.id === ticketId);
-        if (!ticket || ticket.owner !== 'Waleed') return column;
-        removed = true;
-        return { ...column, cards: column.cards.filter((card) => card.id !== ticketId) };
+  async function addTicketComment(ticketId, text) {
+    boardRevisionRef.current += 1;
+    if (localMode) {
+      updateTicket(ticketId, (ticket) => {
+        const commentList = ticket.commentList ?? [];
+        const nextComment = {
+          id: `${ticketId}-comment-${commentList.length + 1}`,
+          author: currentUserName,
+          text,
+        };
+        return {
+          ...ticket,
+          commentList: [...commentList, nextComment],
+          comments: commentList.length + 1,
+        };
+      });
+      notifyBoardChange({
+        type: 'comment',
+        title: 'Comment added',
+        message: `You commented on ${ticketId}.`,
+        ticketId,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+      return;
+    }
+
+    try {
+      const data = await boardRequest(`/api/tickets/${encodeURIComponent(ticketId)}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      updateTicket(ticketId, (ticket) => {
+        const commentList = ticket.commentList ?? [];
+        return {
+          ...ticket,
+          commentList: [...commentList, data.comment],
+          comments: commentList.length + 1,
+        };
+      });
+      setBoardError('');
+      notifyBoardChange({
+        type: 'comment',
+        title: 'Comment added',
+        message: `New comment added to ${ticketId}.`,
+        ticketId,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+    } catch (error) {
+      setBoardError(error.message);
+      throw error;
+    }
+  }
+
+  async function addTicketFiles(ticketId, files) {
+    boardRevisionRef.current += 1;
+    const selectedFiles = Array.from(files);
+    if (selectedFiles.length === 0) return;
+
+    if (localMode) {
+      const uploadedFiles = selectedFiles.map((file) => ({
+        id: `${ticketId}-file-${file.name}-${file.size}`,
+        name: file.name,
+        size: file.size,
+        url: URL.createObjectURL(file),
+      }));
+      updateTicket(ticketId, (ticket) => ({ ...ticket, files: [...(ticket.files ?? []), ...uploadedFiles] }));
+      notifyBoardChange({
+        type: 'file',
+        title: 'Supporting file added',
+        message: `${uploadedFiles.length} file${uploadedFiles.length === 1 ? '' : 's'} uploaded to ${ticketId}.`,
+        ticketId,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+      return;
+    }
+
+    try {
+      for (const file of selectedFiles) {
+        if (file.size > 8 * 1024 * 1024) throw new Error(`${file.name} exceeds the 8 MB file limit.`);
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+          reader.readAsDataURL(file);
+        });
+        const data = await boardRequest(`/api/tickets/${encodeURIComponent(ticketId)}/files`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            data: dataUrl.slice(dataUrl.indexOf(',') + 1),
+          }),
+        });
+        updateTicket(ticketId, (ticket) => ({ ...ticket, files: [...(ticket.files ?? []), data.file] }));
+      }
+      setBoardError('');
+      notifyBoardChange({
+        type: 'file',
+        title: 'Supporting file added',
+        message: `${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'} uploaded to ${ticketId}.`,
+        ticketId,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+    } catch (error) {
+      setBoardError(error.message);
+      throw error;
+    }
+  }
+
+  async function openTicket(ticket) {
+    setSelectedTicket({ ...ticket, files: ticket.files ?? [], filesLoading: false });
+    if (localMode || Array.isArray(ticket.files)) return;
+
+    try {
+      const data = await boardRequest(`/api/tickets/${encodeURIComponent(ticket.id)}/files`);
+      updateTicket(ticket.id, (current) => ({ ...current, files: data.files ?? [], filesLoading: false }));
+    } catch (error) {
+      updateTicket(ticket.id, (current) => ({ ...current, filesLoading: false }));
+      setBoardError(error.message);
+    }
+  }
+
+  async function updateTicketData(ticketId, changes) {
+    boardRevisionRef.current += 1;
+    const mutationVersion = (ticketMutationVersionRef.current.get(ticketId) ?? 0) + 1;
+    ticketMutationVersionRef.current.set(ticketId, mutationVersion);
+    const previousColumns = boardColumns;
+    const previousBacklog = backlogItems;
+    const previousSelectedTicket = selectedTicket;
+    const boardTicket = boardColumns.flatMap((column) => column.cards).find((card) => card.id === ticketId);
+    const backlogTicket = backlogItems.find((item) => item.id === ticketId);
+    const currentTicket = selectedTicket?.id === ticketId ? selectedTicket : boardTicket ?? backlogTicket;
+    if (!currentTicket) return;
+
+    const targetColumnId = changes.columnId ?? currentTicket.columnId ?? 'todo';
+    const targetColumn = kanbanColumns.find((column) => column.id === targetColumnId);
+    const optimisticTicket = {
+      ...currentTicket,
+      ...changes,
+      columnId: targetColumnId,
+      status: targetColumnId === 'backlog' ? 'Backlog' : targetColumn?.title ?? currentTicket.status,
+    };
+
+    setBoardColumns((current) =>
+      current.map((column) => {
+        const cards = column.cards.filter((card) => card.id !== ticketId);
+        return column.id === targetColumnId ? { ...column, cards: [...cards, optimisticTicket] } : { ...column, cards };
       }),
     );
+    setBacklogItems((current) => {
+      const items = current.filter((item) => item.id !== ticketId);
+      return targetColumnId === 'backlog' ? [...items, optimisticTicket] : items;
+    });
+    setSelectedTicket((current) => (current?.id === ticketId ? optimisticTicket : current));
 
-    if (removed) {
-      setSelectedTicket(null);
+    if (localMode) {
+      notifyBoardChange({
+        type: 'ticket',
+        title: 'Ticket updated',
+        message: `${optimisticTicket.title}: ${describeTicketChange(changes)}.`,
+        ticketId,
+        ticketTitle: optimisticTicket.title,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+      return;
     }
+
+    try {
+      const data = await boardRequest(`/api/tickets/${encodeURIComponent(ticketId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...changes,
+          status: changes.columnId,
+        }),
+      });
+      if (ticketMutationVersionRef.current.get(ticketId) !== mutationVersion) return;
+      upsertLoadedTicket(data.ticket);
+      setBoardError('');
+      notifyBoardChange({
+        type: 'ticket',
+        title: 'Ticket updated',
+        message: `${data.ticket.title}: ${describeTicketChange(changes)}.`,
+        ticketId,
+        ticketTitle: data.ticket.title,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+    } catch (error) {
+      if (ticketMutationVersionRef.current.get(ticketId) !== mutationVersion) return;
+      setBoardColumns(previousColumns);
+      setBacklogItems(previousBacklog);
+      setSelectedTicket((current) => (current?.id === ticketId ? previousSelectedTicket : current));
+      setBoardError(error.message);
+    }
+  }
+
+  async function deleteTicket(ticketId) {
+    if (localMode) {
+      setBoardColumns((currentColumns) =>
+        currentColumns.map((column) => ({
+          ...column,
+            cards: column.cards.filter((card) => card.id !== ticketId || !canOperateOnTicket(card, currentUserName, currentUsername)),
+        })),
+      );
+      setBacklogItems((current) => current.filter((item) => item.id !== ticketId || !canOperateOnTicket(item, currentUserName, currentUsername)));
+      setSelectedTicket(null);
+      notifyBoardChange({
+        type: 'ticket',
+        title: 'Ticket deleted',
+        message: `${ticketId} was removed from the board.`,
+        ticketId,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+      return;
+    }
+
+    try {
+      await fetch(`${authApiBase}/api/tickets/${encodeURIComponent(ticketId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'X-CSRF-Token': authToken,
+        },
+      }).then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          if (response.status === 401) notifyAuthExpired();
+          throw new Error(data.error || 'Unable to delete ticket.');
+        }
+      });
+      setBoardColumns((currentColumns) =>
+        currentColumns.map((column) => ({
+          ...column,
+          cards: column.cards.filter((card) => card.id !== ticketId),
+        })),
+      );
+      setBacklogItems((current) => current.filter((item) => item.id !== ticketId));
+      setSelectedTicket(null);
+      setBoardError('');
+      notifyBoardChange({
+        type: 'ticket',
+        title: 'Ticket deleted',
+        message: `${ticketId} was removed from the board.`,
+        ticketId,
+        actor: currentUserName,
+        selfAuthored: true,
+      });
+    } catch (error) {
+      setBoardError(error.message);
+    }
+  }
+
+  if (!localMode && !authToken) {
+    return (
+      <section className="panel-content">
+        <h1>Session expired</h1>
+        <p>Please sign in again.</p>
+      </section>
+    );
   }
 
   return (
@@ -540,13 +1325,18 @@ function ProjectBoardPanel({ submenu }) {
         <div>
           <p className="eyebrow">Progress Status</p>
           <h1>{submenu?.label ?? 'Kanban Board'}</h1>
-          <span className="board-subtitle">AQMA progress portal for CLM and operational tracks.</span>
+          <span className="board-subtitle">
+            {boardRecordCount === 0 ? 'No board records yet.' : `${boardRecordCount} ${boardRecordCount === 1 ? 'ticket' : 'tickets'}`}
+          </span>
         </div>
         <button className="board-action" type="button" onClick={() => setCreateColumnId(submenu?.id === 'backlog' ? 'backlog' : 'todo')}>
           <ClipboardList size={18} />
           New ticket
         </button>
       </header>
+      <div className="board-status" aria-live="polite">
+        {boardError && <p className="auth-error">{boardError}</p>}
+      </div>
 
       {submenu?.id !== 'backlog' && (
         <div className="board-user-filter" aria-label="Filter tickets by user">
@@ -572,17 +1362,19 @@ function ProjectBoardPanel({ submenu }) {
       )}
 
       {submenu?.id === 'backlog' ? (
-        <BacklogBoard items={backlogItems} onOpenTicket={setSelectedTicket} />
+        <BacklogBoard items={backlogItems} onOpenTicket={openTicket} />
       ) : (
         <KanbanBoard
           columns={boardColumns}
+          currentUserName={currentUserName}
+          currentUsername={currentUsername}
           selectedUser={selectedUser}
           draggedTicket={draggedTicket}
           setDraggedTicket={setDraggedTicket}
           dropTargetColumn={dropTargetColumn}
           setDropTargetColumn={setDropTargetColumn}
-          setColumns={setBoardColumns}
-          onOpenTicket={setSelectedTicket}
+          onMoveTicket={updateTicketData}
+          onOpenTicket={openTicket}
           onCreateTicket={setCreateColumnId}
         />
       )}
@@ -593,6 +1385,9 @@ function ProjectBoardPanel({ submenu }) {
           backlogItems={backlogItems}
           defaultColumnId={createColumnId}
           nextTicketId={nextTicketId}
+          currentUserName={currentUserName}
+          currentUsername={currentUsername}
+          teamUsers={teamUsers}
           onClose={() => {
             setSelectedTicket(null);
             setCreateColumnId(null);
@@ -612,17 +1407,30 @@ function columnsLabelFor(columns, columnId) {
   return columns.find((column) => column.id === columnId)?.title;
 }
 
+function canOperateOnTicket(ticket, currentUserName, currentUsername) {
+  return (
+    ticket?.ownerUsername === currentUsername ||
+    ticket?.assignedToUsername === currentUsername ||
+    ticket?.owner === currentUserName ||
+    ticket?.assignedTo === currentUserName
+  );
+}
+
 function KanbanBoard({
   columns,
+  currentUserName,
+  currentUsername,
   selectedUser,
   draggedTicket,
   setDraggedTicket,
   dropTargetColumn,
   setDropTargetColumn,
-  setColumns,
+  onMoveTicket,
   onOpenTicket,
   onCreateTicket,
 }) {
+  const suppressCardOpenUntilRef = useRef(0);
+
   function moveTicket(targetColumnId) {
     if (!draggedTicket || draggedTicket.columnId === targetColumnId) {
       setDraggedTicket(null);
@@ -630,24 +1438,13 @@ function KanbanBoard({
       return;
     }
 
-    setColumns((currentColumns) => {
-      const sourceColumn = currentColumns.find((column) => column.id === draggedTicket.columnId);
-      const movedCard = sourceColumn?.cards.find((card) => card.id === draggedTicket.cardId);
+    const sourceColumn = columns.find((column) => column.id === draggedTicket.columnId);
+    const movedCard = sourceColumn?.cards.find((card) => card.id === draggedTicket.cardId);
 
-      if (!movedCard || movedCard.owner !== 'Waleed') return currentColumns;
+    if (canOperateOnTicket(movedCard, currentUserName, currentUsername)) {
+      onMoveTicket(draggedTicket.cardId, { columnId: targetColumnId });
+    }
 
-      return currentColumns.map((column) => {
-        if (column.id === draggedTicket.columnId) {
-          return { ...column, cards: column.cards.filter((card) => card.id !== draggedTicket.cardId) };
-        }
-
-        if (column.id === targetColumnId) {
-          return { ...column, cards: [...column.cards, movedCard] };
-        }
-
-        return column;
-      });
-    });
     setDraggedTicket(null);
     setDropTargetColumn(null);
   }
@@ -655,7 +1452,10 @@ function KanbanBoard({
   return (
     <div className="kanban-grid" aria-label="Kanban columns">
       {columns.map((column) => {
-        const cards = selectedUser === 'all' ? column.cards : column.cards.filter((card) => card.owner === selectedUser);
+        const cards =
+          selectedUser === 'all'
+            ? column.cards
+            : column.cards.filter((card) => card.owner === selectedUser || card.assignedTo === selectedUser);
 
         return (
         <section
@@ -691,10 +1491,13 @@ function KanbanBoard({
               <article
                 className={`kanban-card ${draggedTicket?.cardId === card.id ? 'is-dragging' : ''}`}
                 key={card.id}
-                draggable={card.owner === 'Waleed'}
+                draggable={canOperateOnTicket(card, currentUserName, currentUsername)}
                 role="button"
                 tabIndex={0}
-                onClick={() => onOpenTicket({ ...card, status: column.title, columnId: column.id })}
+                onClick={(event) => {
+                  if (event.detail === 0 || performance.now() < suppressCardOpenUntilRef.current) return;
+                  onOpenTicket({ ...card, status: column.title, columnId: column.id });
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
@@ -702,16 +1505,18 @@ function KanbanBoard({
                   }
                 }}
                 onDragStart={(event) => {
-                  if (card.owner !== 'Waleed') {
+                  if (!canOperateOnTicket(card, currentUserName, currentUsername)) {
                     event.preventDefault();
                     return;
                   }
                   event.dataTransfer.effectAllowed = 'move';
+                  suppressCardOpenUntilRef.current = Number.POSITIVE_INFINITY;
                   setDraggedTicket({ cardId: card.id, columnId: column.id });
                 }}
                 onDragEnd={() => {
                   setDraggedTicket(null);
                   setDropTargetColumn(null);
+                  suppressCardOpenUntilRef.current = performance.now() + 750;
                 }}
               >
                 <div className="card-topline">
@@ -724,6 +1529,7 @@ function KanbanBoard({
                   <strong>{card.owner}</strong>
                 </div>
                 <div className="card-meta">
+                  {card.assignedTo && <span>{card.assignedTo}</span>}
                   <span>{card.project}</span>
                   <span>{card.tag}</span>
                 </div>
@@ -803,6 +1609,9 @@ function TicketDialog({
   backlogItems,
   defaultColumnId,
   nextTicketId,
+  currentUserName,
+  currentUsername,
+  teamUsers,
   onClose,
   onCreate,
   onAddComment,
@@ -813,23 +1622,68 @@ function TicketDialog({
   const creating = !ticket;
   const defaultColumn = columns.find((column) => column.id === defaultColumnId) ?? columns[0];
   const [commentDraft, setCommentDraft] = useState('');
-  const [editingTicket, setEditingTicket] = useState(false);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState('');
   const [openPropertyMenu, setOpenPropertyMenu] = useState(null);
   const [commentsExpanded, setCommentsExpanded] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [creatingTicket, setCreatingTicket] = useState(false);
+  const [fileUploadError, setFileUploadError] = useState('');
+  const [filesUploading, setFilesUploading] = useState(false);
   const commentInputRef = useRef(null);
+  const currentUser = teamUsers.find((user) => user.username === currentUsername || user.name === currentUserName) ?? teamUsers[0];
   const [draft, setDraft] = useState({
     ticketId: nextTicketId,
     title: '',
     description: '',
-    owner: 'Waleed',
-    priority: 'Medium',
-    project: 'AQMA Internal Management',
-    tag: 'General',
+    owner: currentUser?.name ?? currentUserName,
+    ownerUsername: currentUser?.username ?? currentUsername,
+    assignedTo: '',
+    assignedToUsername: '',
+    priority: '',
+    project: '',
+    tag: '',
     columnId: defaultColumn?.id ?? 'todo',
   });
 
+  useEffect(() => {
+    if (!openPropertyMenu) return undefined;
+
+    function closePropertyMenu(event) {
+      if (!event.target.closest('.property-menu-wrap')) {
+        setOpenPropertyMenu(null);
+      }
+    }
+
+    document.addEventListener('pointerdown', closePropertyMenu);
+
+    return () => {
+      document.removeEventListener('pointerdown', closePropertyMenu);
+    };
+  }, [openPropertyMenu]);
+
+  function togglePropertyMenuFromArrow(event, menuId) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const arrowHitWidth = 28;
+    if (event.clientX < rect.right - arrowHitWidth) return;
+    setOpenPropertyMenu((current) => (current === menuId ? null : menuId));
+  }
+
+  function togglePropertyMenuFromKeyboard(event, menuId) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    setOpenPropertyMenu((current) => (current === menuId ? null : menuId));
+  }
+
+  useEffect(() => {
+    if (creating) {
+      setDraft((current) => ({ ...current, ticketId: nextTicketId }));
+    }
+  }, [creating, nextTicketId]);
+
   function updateDraft(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
+    setFormError('');
   }
 
   function chooseDraftProperty(field, value) {
@@ -837,18 +1691,65 @@ function TicketDialog({
     setOpenPropertyMenu(null);
   }
 
-  function submitTicket(event) {
+  async function submitTicket(event) {
     event.preventDefault();
-    if (!draft.title.trim()) return;
-    onCreate({ ...draft, title: draft.title.trim() });
+    const missingFields = getMissingDraftFields();
+    if (missingFields.length > 0) {
+      setFormError(`Fill in: ${missingFields.join(', ')}.`);
+      return;
+    }
+
+    setCreatingTicket(true);
+    setFormError('');
+    try {
+      await onCreate({ ...draft, title: draft.title.trim() });
+    } catch (error) {
+      setFormError(error.message || 'Unable to create card.');
+    } finally {
+      setCreatingTicket(false);
+    }
   }
 
-  function submitComment(event) {
+  function chooseDraftUser(type, user) {
+    setDraft((current) => ({
+      ...current,
+      ...(type === 'owner'
+        ? { owner: user.name, ownerUsername: user.username }
+        : { assignedTo: user.name, assignedToUsername: user.username }),
+    }));
+    setFormError('');
+    setOpenPropertyMenu(null);
+  }
+
+  function getMissingDraftFields() {
+    return [
+      [draft.title, 'title'],
+      [draft.description, 'description'],
+      [draft.ownerUsername, 'opened by'],
+      [draft.assignedToUsername, 'assigned to'],
+      [draft.priority, 'priority'],
+      [draft.tag, 'task type'],
+      [draft.project, 'epic'],
+      [draft.columnId, 'status'],
+    ]
+      .filter(([value]) => !String(value ?? '').trim())
+      .map(([, label]) => label);
+  }
+
+  async function submitComment(event) {
     event.preventDefault();
     const text = commentDraft.trim();
-    if (!ticket || !text) return;
-    onAddComment(ticket.id, text);
-    setCommentDraft('');
+    if (!ticket || !text || commentSubmitting) return;
+    setCommentSubmitting(true);
+    setCommentError('');
+    try {
+      await onAddComment(ticket.id, text);
+      setCommentDraft('');
+    } catch (error) {
+      setCommentError(error.message || 'Unable to add comment.');
+    } finally {
+      setCommentSubmitting(false);
+    }
   }
 
   function handleCommentKeyDown(event) {
@@ -934,43 +1835,62 @@ function TicketDialog({
     return parts;
   }
 
-  function handleFiles(event) {
+  async function handleFiles(event) {
     if (!ticket) return;
-    onAddFiles(ticket.id, event.target.files ?? []);
+    setFileUploadError('');
+    setFilesUploading(true);
+    try {
+      await onAddFiles(ticket.id, event.target.files ?? []);
+    } catch (error) {
+      setFileUploadError(error.message || 'Unable to upload supporting files.');
+    } finally {
+      setFilesUploading(false);
+    }
     event.target.value = '';
   }
 
   const ticketComments = ticket?.commentList ?? [];
   const ticketFiles = ticket?.files ?? [];
-  const isOwnedByCurrentUser = ticket?.owner === 'Waleed';
+  const ticketFilesLoading = Boolean(ticket?.filesLoading);
+  const canEditTicket = canOperateOnTicket(ticket, currentUserName, currentUsername);
   const [editDraft, setEditDraft] = useState(null);
 
   useEffect(() => {
     setCommentsExpanded(false);
-    if (!ticket || ticket.owner !== 'Waleed') {
+    if (!ticket || !canEditTicket) {
       setEditDraft(null);
       return;
     }
 
     setEditDraft({
       title: ticket.title ?? '',
-      priority: ticket.priority ?? 'Medium',
+      owner: ticket.owner ?? '',
+      ownerUsername: ticket.ownerUsername ?? '',
+      priority: ticket.priority ?? '',
       project: ticket.project ?? '',
       tag: ticket.tag ?? '',
+      assignedTo: ticket.assignedTo ?? '',
+      assignedToUsername: ticket.assignedToUsername ?? '',
       columnId: ticket.columnId ?? columns.find((column) => column.title === ticket.status)?.id ?? defaultColumn?.id ?? 'todo',
     });
-  }, [ticket?.id]);
+  }, [ticket?.id, currentUserName, currentUsername, canEditTicket]);
 
   function commitOwnerChange(changes) {
-    if (!ticket || !isOwnedByCurrentUser) return;
-    onUpdateTicket(ticket.id, {
-      title: changes.title ?? editDraft.title,
-      priority: changes.priority ?? editDraft.priority,
-      project: changes.project ?? editDraft.project,
-      tag: changes.tag ?? editDraft.tag,
-      columnId: changes.columnId ?? editDraft.columnId,
-    });
+    if (!ticket || !canEditTicket) return;
+    onUpdateTicket(ticket.id, changes);
   }
+
+  function chooseTicketUser(user) {
+    setEditDraft((current) => ({
+      ...current,
+      assignedTo: user.name,
+      assignedToUsername: user.username,
+    }));
+    commitOwnerChange({ assignedTo: user.name, assignedToUsername: user.username });
+    setOpenPropertyMenu(null);
+  }
+
+  const createDisabled = getMissingDraftFields().length > 0;
 
   function chooseProperty(field, value) {
     setEditDraft((current) => ({ ...current, [field]: value }));
@@ -1002,7 +1922,7 @@ function TicketDialog({
         <header>
           <div>
             <div className="ticket-title-row">
-              {creating || !isOwnedByCurrentUser ? (
+              {creating || !canEditTicket ? (
                 <h2>{creating ? 'Create card' : ticket.title}</h2>
               ) : (
                 <h2
@@ -1049,8 +1969,11 @@ function TicketDialog({
                   />
                 </section>
                 <footer>
+                  {formError && <p className="auth-error">{formError}</p>}
                   <button className="dialog-secondary" type="button" onClick={onClose}>Cancel</button>
-                  <button className="dialog-primary" type="submit">Create card</button>
+                  <button className="dialog-primary" type="submit" disabled={createDisabled || creatingTicket}>
+                    {creatingTicket ? 'Creating...' : 'Create card'}
+                  </button>
                 </footer>
               </section>
 
@@ -1062,14 +1985,23 @@ function TicketDialog({
                 </label>
                 <label className="property-row">
                   <span>Opened by</span>
+                  <strong className="property-person"><span className="owner-chip">{draft.owner.slice(0, 1)}</span>{draft.owner}</strong>
+                </label>
+                <label className="property-row">
+                  <span>Assigned to</span>
                   <div className="property-menu-wrap">
-                    <button className="property-chip property-chip--priority" type="button" onClick={() => setOpenPropertyMenu(openPropertyMenu === 'create-owner' ? null : 'create-owner')}>
-                      {draft.owner}
+                    <button
+                      className="property-chip property-chip--user"
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'create-assigned')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'create-assigned')}
+                    >
+                      {draft.assignedTo || 'Select user'}
                     </button>
-                    {openPropertyMenu === 'create-owner' && (
+                    {openPropertyMenu === 'create-assigned' && (
                       <div className="property-menu">
-                        {['Waleed', 'Ethan', 'Leo', 'Maya', 'Nina', 'Omar', 'Sara'].map((user) => (
-                          <button type="button" key={user} onClick={() => chooseDraftProperty('owner', user)}>{user}</button>
+                        {teamUsers.map((user) => (
+                          <button type="button" key={user.username} onClick={() => chooseDraftUser('assigned', user)}>{user.name}</button>
                         ))}
                       </div>
                     )}
@@ -1078,13 +2010,24 @@ function TicketDialog({
                 <label className="property-row">
                   <span>Priority</span>
                   <div className="property-menu-wrap">
-                    <button className="property-chip property-chip--priority" type="button" onClick={() => setOpenPropertyMenu(openPropertyMenu === 'create-priority' ? null : 'create-priority')}>
-                      {draft.priority}
+                    <button
+                      className={`property-chip property-chip--priority priority-${draft.priority.toLowerCase() || 'unset'}`}
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'create-priority')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'create-priority')}
+                    >
+                      {draft.priority || 'Select priority'}
                     </button>
                     {openPropertyMenu === 'create-priority' && (
                       <div className="property-menu">
-                        {['High', 'Medium', 'Low'].map((option) => (
-                          <button type="button" key={option} onClick={() => chooseDraftProperty('priority', option)}>{option}</button>
+                        {priorityOptions.map((priority) => (
+                          <button
+                            type="button"
+                            key={priority}
+                            onClick={() => chooseDraftProperty('priority', priority)}
+                          >
+                            {priority}
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1093,13 +2036,18 @@ function TicketDialog({
                 <label className="property-row">
                   <span>Task type</span>
                   <div className="property-menu-wrap">
-                    <button className="property-chip property-chip--type" type="button" onClick={() => setOpenPropertyMenu(openPropertyMenu === 'create-tag' ? null : 'create-tag')}>
-                      {draft.tag}
+                    <button
+                      className="property-chip property-chip--type"
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'create-task-type')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'create-task-type')}
+                    >
+                      {draft.tag || 'Select task type'}
                     </button>
-                    {openPropertyMenu === 'create-tag' && (
-                      <div className="property-menu">
-                        {['General', 'Board policy', 'Quality', 'Documentation', 'Release'].map((option) => (
-                          <button type="button" key={option} onClick={() => chooseDraftProperty('tag', option)}>{option}</button>
+                    {openPropertyMenu === 'create-task-type' && (
+                      <div className="property-menu property-menu--wide property-menu--up">
+                        {taskTypeOptions.map((taskType) => (
+                          <button type="button" key={taskType} onClick={() => chooseDraftProperty('tag', taskType)}>{taskType}</button>
                         ))}
                       </div>
                     )}
@@ -1108,26 +2056,36 @@ function TicketDialog({
                 <label className="property-row">
                   <span>Epic</span>
                   <div className="property-menu-wrap">
-                    <button className="property-chip property-chip--epic" type="button" onClick={() => setOpenPropertyMenu(openPropertyMenu === 'create-project' ? null : 'create-project')}>
-                      {draft.project}
+                    <button
+                      className="property-chip property-chip--epic"
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'create-epic')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'create-epic')}
+                    >
+                      {draft.project || 'Select epic'}
                     </button>
-                    {openPropertyMenu === 'create-project' && (
-                      <div className="property-menu">
-                        {['AQMA Internal Management', 'CLM Core Build', 'Cert Dashboard', 'Automation Efforts 2026', 'Security / Infrastructure'].map((option) => (
-                          <button type="button" key={option} onClick={() => chooseDraftProperty('project', option)}>{option}</button>
+                    {openPropertyMenu === 'create-epic' && (
+                      <div className="property-menu property-menu--wide property-menu--up">
+                        {epicOptions.map((epic) => (
+                          <button type="button" key={epic} onClick={() => chooseDraftProperty('project', epic)}>{epic}</button>
                         ))}
                       </div>
                     )}
                   </div>
                 </label>
                 <label className="property-row">
-                  <span>Destination</span>
+                  <span>Status</span>
                   <div className="property-menu-wrap">
-                    <button className={`property-chip property-chip--status status-pill-${draft.columnId}`} type="button" onClick={() => setOpenPropertyMenu(openPropertyMenu === 'create-column' ? null : 'create-column')}>
+                    <button
+                      className={`property-chip property-chip--status status-pill-${draft.columnId}`}
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'create-column')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'create-column')}
+                    >
                       {draft.columnId === 'backlog' ? 'Backlog' : columns.find((column) => column.id === draft.columnId)?.title}
                     </button>
                     {openPropertyMenu === 'create-column' && (
-                      <div className="property-menu">
+                      <div className="property-menu property-menu--up">
                         <button type="button" onClick={() => chooseDraftProperty('columnId', 'backlog')}>Backlog</button>
                         {columns.map((column) => (
                           <button type="button" key={column.id} onClick={() => chooseDraftProperty('columnId', column.id)}>{column.title}</button>
@@ -1190,22 +2148,32 @@ function TicketDialog({
                     }}
                     onKeyDown={handleCommentKeyDown}
                     placeholder="Add a comment..."
+                    maxLength={5000}
                     rows={3}
                   />
-                  <button className="dialog-primary" type="submit">Add comment</button>
+                  {commentError && <p className="auth-error">{commentError}</p>}
+                  <button className="dialog-primary" type="submit" disabled={!commentDraft.trim() || commentSubmitting}>
+                    {commentSubmitting ? 'Adding...' : 'Add comment'}
+                  </button>
                 </form>
               </section>
 
               <section className="ticket-description">
                 <h4>Task description</h4>
                 <p>
-                  {ticket.description || `Track work for ${ticket.project}. Current focus is ${ticket.tag.toLowerCase()} with priority marked as ${ticket.priority.toLowerCase()}.`}
+                  {ticket.description || 'No description.'}
                 </p>
               </section>
 
               <section className="ticket-files">
                 <h4>Supporting files</h4>
-                {ticketFiles.length === 0 ? (
+                {ticketFilesLoading ? (
+                  <div className="file-loading-placeholder" aria-label="Loading supporting files" aria-busy="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : ticketFiles.length === 0 ? (
                   <p className="empty-detail-copy">No supporting files uploaded.</p>
                 ) : (
                   ticketFiles.map((file) => (
@@ -1215,15 +2183,16 @@ function TicketDialog({
                     </div>
                   ))
                 )}
+                {fileUploadError && <p className="auth-error">{fileUploadError}</p>}
                 <label className="file-upload-row">
-                  {isOwnedByCurrentUser ? (
+                  {canEditTicket ? (
                     <>
                       <Upload size={18} />
-                      <span>Upload supporting files</span>
-                      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,image/*" multiple onChange={handleFiles} />
+                      <span>{filesUploading ? 'Uploading...' : 'Upload supporting files'}</span>
+                      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.webp" multiple onChange={handleFiles} disabled={filesUploading} />
                     </>
                   ) : (
-                    <span>Only the ticket owner can add supporting files.</span>
+                    <span>Only the opener or assignee can add supporting files.</span>
                   )}
                 </label>
               </section>
@@ -1236,69 +2205,121 @@ function TicketDialog({
                 <strong className="property-person"><span className="owner-chip">{ticket.owner.slice(0, 1)}</span>{ticket.owner}</strong>
               </div>
               <div className="property-row">
-                <span>Priority</span>
-                {isOwnedByCurrentUser ? (
+                <span>Assigned to</span>
+                {canEditTicket ? (
                   <div className="property-menu-wrap">
                     <button
                       className="property-chip property-chip--priority"
                       type="button"
-                      onClick={() => setOpenPropertyMenu(openPropertyMenu === 'priority' ? null : 'priority')}
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'assigned')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'assigned')}
+                    >
+                      {editDraft?.assignedTo ?? ticket.assignedTo}
+                    </button>
+                    {openPropertyMenu === 'assigned' && (
+                      <div className="property-menu">
+                        {teamUsers.map((user) => (
+                          <button type="button" key={user.username} onClick={() => chooseTicketUser(user)}>{user.name}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <strong className="property-chip property-chip--user">{ticket.assignedTo ?? ''}</strong>
+                )}
+              </div>
+              <div className="property-row">
+                <span>Priority</span>
+                {canEditTicket ? (
+                  <div className="property-menu-wrap">
+                    <button
+                      className={`property-chip property-chip--priority priority-${String(editDraft?.priority ?? ticket.priority).toLowerCase()}`}
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'priority')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'priority')}
                     >
                       {editDraft?.priority ?? ticket.priority}
                     </button>
                     {openPropertyMenu === 'priority' && (
                       <div className="property-menu">
-                        {['High', 'Medium', 'Low'].map((option) => (
-                          <button type="button" key={option} onClick={() => chooseProperty('priority', option)}>
-                            {option}
+                        {priorityOptions.map((priority) => (
+                          <button
+                            type="button"
+                            key={priority}
+                            onClick={() => chooseProperty('priority', priority)}
+                          >
+                            {priority}
                           </button>
                         ))}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <strong className="property-chip property-chip--priority">{ticket.priority}</strong>
+                  <strong className={`property-chip property-chip--priority priority-${ticket.priority.toLowerCase()}`}>{ticket.priority}</strong>
                 )}
               </div>
               <div className="property-row">
                 <span>Task type</span>
-                {isOwnedByCurrentUser ? (
-                  <input
-                    className="property-chip property-chip--type"
-                    value={editDraft?.tag ?? ticket.tag}
-                    onChange={(event) => setEditDraft((current) => ({ ...current, tag: event.target.value }))}
-                    onBlur={() => commitOwnerChange({ tag: editDraft?.tag || ticket.tag })}
-                  />
+                {canEditTicket ? (
+                  <div className="property-menu-wrap">
+                    <button
+                      className="property-chip property-chip--type"
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'task-type')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'task-type')}
+                    >
+                      {editDraft?.tag ?? ticket.tag}
+                    </button>
+                    {openPropertyMenu === 'task-type' && (
+                      <div className="property-menu property-menu--wide property-menu--up">
+                        {taskTypeOptions.map((taskType) => (
+                          <button type="button" key={taskType} onClick={() => chooseProperty('tag', taskType)}>{taskType}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <strong className="property-chip property-chip--type">{ticket.tag}</strong>
                 )}
               </div>
               <div className="property-row">
                 <span>Epic</span>
-                {isOwnedByCurrentUser ? (
-                  <input
-                    className="property-chip property-chip--epic"
-                    value={editDraft?.project ?? ticket.project}
-                    onChange={(event) => setEditDraft((current) => ({ ...current, project: event.target.value }))}
-                    onBlur={() => commitOwnerChange({ project: editDraft?.project || ticket.project })}
-                  />
+                {canEditTicket ? (
+                  <div className="property-menu-wrap">
+                    <button
+                      className="property-chip property-chip--epic"
+                      type="button"
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'epic')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'epic')}
+                    >
+                      {editDraft?.project ?? ticket.project}
+                    </button>
+                    {openPropertyMenu === 'epic' && (
+                      <div className="property-menu property-menu--wide property-menu--up">
+                        {epicOptions.map((epic) => (
+                          <button type="button" key={epic} onClick={() => chooseProperty('project', epic)}>{epic}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <strong className="property-chip property-chip--epic">{ticket.project}</strong>
                 )}
               </div>
               <div className="property-row">
                 <span>Status</span>
-                {isOwnedByCurrentUser ? (
+                {canEditTicket ? (
                   <div className="property-menu-wrap">
                     <button
                       className={`property-chip property-chip--status status-pill-${getStatusKey(ticket.status)}`}
                       type="button"
-                      onClick={() => setOpenPropertyMenu(openPropertyMenu === 'status' ? null : 'status')}
+                      onClick={(event) => togglePropertyMenuFromArrow(event, 'status')}
+                      onKeyDown={(event) => togglePropertyMenuFromKeyboard(event, 'status')}
                     >
                       {ticket.status}
                     </button>
                     {openPropertyMenu === 'status' && (
-                      <div className="property-menu">
+                      <div className="property-menu property-menu--up">
                         {columns.map((column) => (
                           <button type="button" key={column.id} onClick={() => chooseProperty('columnId', column.id)}>
                             {column.title}
@@ -1335,130 +2356,231 @@ function ProfilePanel({
   companyGraphOpen,
   setCompanyGraphOpen,
   pushHistory,
+  authToken,
+  localMode,
 }) {
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [directoryUsers, setDirectoryUsers] = useState([]);
 
-  const stats = [
-    { label: 'Assigned tickets', value: '42' },
-    { label: 'Completed', value: '31' },
-    { label: 'Open', value: '11' },
+  const stats = [];
+
+  useEffect(() => {
+    if (!authToken || localMode) {
+      setDirectoryUsers([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadDirectoryUsers() {
+      try {
+        const response = await fetch(`${authApiBase}/api/team`, {
+          credentials: 'include',
+          headers: {
+            ...(authToken ? { 'X-CSRF-Token': authToken } : {}),
+          },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 401) notifyAuthExpired();
+          throw new Error(data.error || 'Unable to load reporting structure.');
+        }
+        if (!cancelled) setDirectoryUsers((data.users ?? []).filter((user) => !isHiddenDirectoryUser(user)));
+      } catch {
+        if (!cancelled) setDirectoryUsers([]);
+      }
+    }
+
+    loadDirectoryUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, localMode]);
+
+  function managerNameFromDn(managerDn) {
+    return String(managerDn ?? '').match(/^CN=([^,]+)/)?.[1] ?? '';
+  }
+
+  function userMatchesAny(user, matches) {
+    const searchText = normalizedPersonText(user);
+    return matches.some((match) => searchText.includes(match));
+  }
+
+  function fallbackGraphPerson(key, name, role, managerName = '') {
+    return {
+      username: key,
+      name,
+      email: '',
+      phone: '',
+      role,
+      employeeId: '',
+      department: '',
+      company: '',
+      office: '',
+      description: '',
+      managerDn: managerName ? `CN=${managerName}` : '',
+    };
+  }
+
+  function graphPerson(key, name, matches, role, managerName = '') {
+    const directoryUser = directoryUsers.find((user) => userMatchesAny(user, matches));
+    return directoryUser
+      ? { ...directoryUser, name, role, managerDn: managerName ? `CN=${managerName}` : '' }
+      : fallbackGraphPerson(key, name, role, managerName);
+  }
+
+  const asadGraphUser = graphPerson('asad-ali', 'Asad Ali', ['asad'], 'Chief Executive Officer');
+
+  const graphSeniorUsers = seniorGraphNames.map((senior) => {
+    return graphPerson(senior.key, senior.fallbackName, senior.match, 'Senior PKI Engineer', asadGraphUser.name);
+  });
+  const graphEngineerUsers = [
+    graphPerson('asim-shabbir', 'Asim Shabbir', ['asim shabbir', 'asim'], 'PKI Engineer', 'Shaharyar Raza'),
+    graphPerson('danish-ali', 'Danish Ali', ['danish ali', 'danish'], 'PKI Engineer', 'Muhammad Talha'),
+    graphPerson('muhammad-raza', 'Muhammad Raza', ['muhammad raza'], 'PKI Engineer', 'Waleed Ali'),
   ];
+  const graphJuniorUsers = [
+    graphPerson('daniel-ali', 'Daniel Ali', ['daniel ali', 'daniel'], 'Junior PKI Engineer', 'Danish Ali'),
+    graphPerson('qasim-ali', 'Qasim Ali', ['qasim ali', 'qasim'], 'Junior PKI Engineer', 'Asim Shabbir'),
+  ];
+
+  const directoryByName = useMemo(
+    () => new Map(directoryUsers.map((user) => [String(user.name).toLowerCase(), user])),
+    [directoryUsers],
+  );
+
+  const currentDirectoryUser =
+    directoryUsers.find((user) => user.username === profile.username) ??
+    directoryUsers.find((user) => user.email === profile.email) ??
+    directoryUsers.find((user) => user.name === profile.name) ??
+    null;
+
+  function toHierarchyPerson(user, relation) {
+    return {
+      id: user.username,
+      name: user.name,
+      role: user.role || '',
+      relation,
+      email: user.email || '',
+      phone: user.phone || '',
+      employeeId: user.employeeId || '',
+      department: user.department || '',
+      office: user.office || '',
+      manager: managerNameFromDn(user.managerDn),
+      tickets: '0',
+      completed: '0',
+      note: user.description || '',
+    };
+  }
+
+  const managerName = managerNameFromDn(currentDirectoryUser?.managerDn ?? profile.managerDn);
+  const managerUser = managerName ? directoryByName.get(managerName.toLowerCase()) : null;
+  const directReports = currentDirectoryUser
+    ? directoryUsers.filter((user) => managerNameFromDn(user.managerDn).toLowerCase() === currentDirectoryUser.name.toLowerCase())
+    : [];
+  const coworkers = managerName
+    ? directoryUsers.filter(
+        (user) =>
+          user.username !== currentDirectoryUser?.username &&
+          managerNameFromDn(user.managerDn).toLowerCase() === managerName.toLowerCase(),
+      )
+    : [];
 
   const hierarchy = [
     {
       title: 'Reports to',
-      people: [
-        {
-          id: 'maya',
-          name: 'Maya Chen',
-          role: 'Program Director',
-          relation: 'Manager',
-          email: 'maya.chen@example.com',
-          phone: '+1 (555) 310-2244',
-          tickets: '18',
-          completed: '16',
-          note: 'Owns delivery strategy and approves priority changes.',
-        },
-        {
-          id: 'omar',
-          name: 'Omar Khalid',
-          role: 'Operations Lead',
-          relation: 'Lead reviewer',
-          email: 'omar.khalid@example.com',
-          phone: '+1 (555) 812-4419',
-          tickets: '24',
-          completed: '20',
-          note: 'Reviews AQMA workflow quality and unblock decisions.',
-        },
-      ],
+      people: managerUser ? [toHierarchyPerson(managerUser, 'Manager')] : [],
     },
     {
       title: 'Works with',
-      people: [
-        {
-          id: 'nina',
-          name: 'Nina Patel',
-          role: 'Data Analyst',
-          relation: 'Colleague',
-          email: 'nina.patel@example.com',
-          phone: '+1 (555) 472-1188',
-          tickets: '29',
-          completed: '23',
-          note: 'Maintains monitoring data and reporting inputs.',
-        },
-        {
-          id: 'leo',
-          name: 'Leo Martin',
-          role: 'Field Coordinator',
-          relation: 'Colleague',
-          email: 'leo.martin@example.com',
-          phone: '+1 (555) 674-9021',
-          tickets: '21',
-          completed: '15',
-          note: 'Coordinates field checks and follow-up evidence.',
-        },
-      ],
+      people: coworkers.map((user) => toHierarchyPerson(user, 'Colleague')),
     },
     {
       title: 'Can assign to',
-      people: [
-        {
-          id: 'sara',
-          name: 'Sara Lee',
-          role: 'Junior Reviewer',
-          relation: 'Direct report',
-          email: 'sara.lee@example.com',
-          phone: '+1 (555) 226-7308',
-          tickets: '13',
-          completed: '9',
-          note: 'Handles first-pass task review and documentation cleanup.',
-        },
-        {
-          id: 'ethan',
-          name: 'Ethan Brooks',
-          role: 'Support Analyst',
-          relation: 'Direct report',
-          email: 'ethan.brooks@example.com',
-          phone: '+1 (555) 534-6177',
-          tickets: '16',
-          completed: '12',
-          note: 'Supports backlog grooming and ticket validation.',
-        },
-      ],
+      people: directReports.map((user) => toHierarchyPerson(user, 'Direct report')),
     },
   ];
 
   const currentPerson = {
-    id: 'waleed',
-    name: profile.name || 'Waleed',
-    role: profile.role || 'AQMA Coordinator',
+    id: profile.username || 'current-user',
+    name: profile.name || 'User',
+    role: profile.role || '',
     relation: 'Current user',
-    email: profile.email || 'waleed@example.com',
-    phone: profile.phone || '+1 (555) 019-2846',
-    tickets: '42',
-    completed: '31',
-    note: profile.description || 'Responsible for coordinating AQMA board execution, assignments, and review flow.',
+    email: profile.email || '',
+    phone: profile.phone || '',
+    tickets: '0',
+    completed: '0',
+    note: profile.description || '',
   };
 
+  const graphUsers = [asadGraphUser, ...graphSeniorUsers, ...graphEngineerUsers, ...graphJuniorUsers];
+  const selectedDirectoryUser = graphUsers.find((user) => user.username === selectedPersonId);
+  const selectedRelation =
+    selectedPersonId === asadGraphUser.username
+      ? 'Manager'
+      : selectedPersonId === managerUser?.username
+      ? 'Manager'
+      : graphSeniorUsers.some((user) => user.username === selectedPersonId) ||
+          directReports.some((user) => user.username === selectedPersonId)
+        ? 'Direct report'
+        : coworkers.some((user) => user.username === selectedPersonId)
+          ? 'Colleague'
+          : 'Team member';
   const selectedPerson =
-    selectedPersonId === 'waleed'
+    selectedPersonId === currentPerson.id
       ? currentPerson
-      : hierarchy.flatMap((group) => group.people).find((person) => person.id === selectedPersonId) ?? null;
+      : selectedDirectoryUser
+        ? toHierarchyPerson(selectedDirectoryUser, selectedRelation)
+        : null;
 
-  function handleAvatarFile(event) {
-    const file = event.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
+  async function handleAvatarFile(event) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    setAvatarUploadError('');
 
-    const reader = new FileReader();
-    reader.onload = () => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setAvatarUploadError('Choose a PNG, JPG, or WebP image.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setAvatarUploadError('Choose an image smaller than 10 MB.');
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const outputSize = 320;
+      const sourceSize = Math.min(bitmap.width, bitmap.height);
+      const sourceX = Math.max(0, (bitmap.width - sourceSize) / 2);
+      const sourceY = Math.max(0, (bitmap.height - sourceSize) / 2);
+      const canvas = document.createElement('canvas');
+      canvas.width = outputSize;
+      canvas.height = outputSize;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Image processing is unavailable.');
+      context.drawImage(bitmap, sourceX, sourceY, sourceSize, sourceSize, 0, 0, outputSize, outputSize);
+      bitmap.close();
+
+      const avatarValue = canvas.toDataURL('image/webp', 0.86);
+      if (!/^data:image\/(png|jpeg|webp);base64,/i.test(avatarValue) || avatarValue.length > 700_000) {
+        throw new Error('The processed image is too large.');
+      }
       setProfile((current) => ({
         ...current,
-        avatar: { type: 'image', value: String(reader.result) },
+        avatar: { type: 'image', value: avatarValue },
       }));
       setAvatarPickerOpen(false);
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+    } catch (error) {
+      setAvatarUploadError(error.message || 'Unable to process this image.');
+    } finally {
+      setAvatarUploading(false);
+    }
   }
 
   if (selectedSection === 'app-settings') {
@@ -1531,35 +2653,45 @@ function ProfilePanel({
             </div>
             <div className="directory-field">
               <span>Role</span>
-              <strong>{profile.role || 'AQMA Coordinator'}</strong>
+              <strong>{profile.role || ''}</strong>
             </div>
           </div>
 
-          <div className="profile-stat-grid" aria-label="Ticket stats">
-            {stats.map((stat) => (
-              <div key={stat.label}>
-                <strong>{stat.value}</strong>
-                <span>{stat.label}</span>
-              </div>
-            ))}
-          </div>
+          {stats.length > 0 && (
+            <div className="profile-stat-grid" aria-label="Ticket stats">
+              {stats.map((stat) => (
+                <div key={stat.label}>
+                  <strong>{stat.value}</strong>
+                  <span>{stat.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="profile-contact-mini">
             <div className="directory-field">
               <span><Mail size={15} /> Email</span>
-              <strong>{profile.email || 'Not available'}</strong>
+              <strong>{profile.email || ''}</strong>
             </div>
             <div className="directory-field">
               <span><Phone size={15} /> Phone</span>
-              <strong>{profile.phone || 'Not available'}</strong>
+              <strong>{profile.phone || ''}</strong>
+            </div>
+            <div className="directory-field">
+              <span>Employee ID</span>
+              <strong>{profile.employeeId || ''}</strong>
+            </div>
+            <div className="directory-field">
+              <span>Department</span>
+              <strong>{profile.department || ''}</strong>
             </div>
             <div className="directory-field">
               <span>Office</span>
-              <strong>{profile.office || 'Not available'}</strong>
+              <strong>{profile.office || ''}</strong>
             </div>
             <div className="directory-field">
-              <span>Description</span>
-              <strong>{profile.description || 'Not available'}</strong>
+              <span>Manager</span>
+              <strong>{profile.managerDn ? profile.managerDn.match(/^CN=([^,]+)/)?.[1] ?? profile.managerDn : ''}</strong>
             </div>
           </div>
 
@@ -1570,7 +2702,7 @@ function ProfilePanel({
             <>
               <div className="detail-hero">
                 <span className="detail-avatar">
-                  {selectedPerson.id === 'waleed' ? <AvatarView avatar={profile.avatar} size={44} /> : selectedPerson.name.slice(0, 1)}
+                  {selectedPerson.id === profile.username ? <AvatarView avatar={profile.avatar} size={44} /> : selectedPerson.name.slice(0, 1)}
                 </span>
                 <div>
                   <p>{selectedPerson.relation}</p>
@@ -1599,9 +2731,13 @@ function ProfilePanel({
                   <h2>Contact</h2>
                   <p>{selectedPerson.email}</p>
                   <p>{selectedPerson.phone}</p>
+                  {selectedPerson.office && <p>{selectedPerson.office}</p>}
                 </article>
                 <article>
-                  <h2>Responsibility</h2>
+                  <h2>Profile</h2>
+                  {selectedPerson.employeeId && <p>{selectedPerson.employeeId}</p>}
+                  {selectedPerson.department && <p>{selectedPerson.department}</p>}
+                  {selectedPerson.manager && <p>Reports to {selectedPerson.manager}</p>}
                   <p>{selectedPerson.note}</p>
                 </article>
               </div>
@@ -1611,7 +2747,7 @@ function ProfilePanel({
                   <h2>{selectedPerson.relation === 'Direct report' ? 'Assignable work' : 'Collaboration focus'}</h2>
                   <p>
                     {selectedPerson.relation === 'Direct report'
-                      ? 'This person can receive tasks from Waleed inside the Project Board workflow.'
+                      ? `This person can receive tasks from ${currentPerson.name} inside the Project Board workflow.`
                       : 'Use this detail pane to understand reporting context, ownership, and escalation paths.'}
                   </p>
                 </div>
@@ -1645,7 +2781,7 @@ function ProfilePanel({
           <div className="avatar-modal-card">
             <header>
               <h2>Change avatar</h2>
-              <button type="button" aria-label="Close avatar picker" onClick={() => setAvatarPickerOpen(false)}>
+              <button type="button" aria-label="Close avatar picker" onClick={() => setAvatarPickerOpen(false)} disabled={avatarUploading}>
                 <X size={19} />
               </button>
             </header>
@@ -1655,6 +2791,7 @@ function ProfilePanel({
                   className="avatar-choice"
                   type="button"
                   key={avatar.id}
+                  disabled={avatarUploading}
                   onClick={() => {
                     setProfile((current) => ({ ...current, avatar: { type: 'preset', value: avatar.id } }));
                     setAvatarPickerOpen(false);
@@ -1666,12 +2803,13 @@ function ProfilePanel({
                   <small>{avatar.label}</small>
                 </button>
               ))}
-              <label className="avatar-upload">
+              <label className={`avatar-upload ${avatarUploading ? 'is-loading' : ''}`}>
                 <Upload size={22} />
-                <span>Choose from system</span>
-                <input type="file" accept="image/*" onChange={handleAvatarFile} />
+                <span>{avatarUploading ? 'Preparing image...' : 'Choose from system'}</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAvatarFile} disabled={avatarUploading} />
               </label>
             </div>
+            {avatarUploadError && <p className="avatar-upload-error" role="alert">{avatarUploadError}</p>}
           </div>
         </div>
       )}
@@ -1690,44 +2828,85 @@ function ProfilePanel({
               </button>
             </header>
             <div className="company-graph">
-              <div className="graph-tier">
-                {hierarchy[0].people.map((person) => (
-                  <button type="button" key={person.id} onClick={() => { setSelectedPersonId(person.id); setCompanyGraphOpen(false); }}>
-                    <span>{person.name.slice(0, 1)}</span>
-                    <strong>{person.name}</strong>
-                    <small>{person.role}</small>
-                  </button>
-                ))}
-              </div>
-              <div className="graph-tier graph-tier--self">
-                <button type="button" onClick={() => { setSelectedPersonId('waleed'); setCompanyGraphOpen(false); }}>
-                  <span><AvatarView avatar={profile.avatar} size={24} /></span>
-                  <strong>{profile.name || 'Waleed'}</strong>
-                  <small>{profile.role || 'AQMA Coordinator'}</small>
-                </button>
-              </div>
-              <div className="graph-tier">
-                {hierarchy[2].people.map((person) => (
-                  <button type="button" key={person.id} onClick={() => { setSelectedPersonId(person.id); setCompanyGraphOpen(false); }}>
-                    <span>{person.name.slice(0, 1)}</span>
-                    <strong>{person.name}</strong>
-                    <small>{person.role}</small>
-                  </button>
-                ))}
+              {(() => {
+                const graphTiers = [
+                  { key: 'executive', users: [asadGraphUser] },
+                  { key: 'senior', users: graphSeniorUsers },
+                  { key: 'engineer', users: graphEngineerUsers },
+                  { key: 'junior', users: graphJuniorUsers },
+                ];
+
+                return (
+                  <>
+                    {graphTiers.map((tier, tierIndex) => (
+                      <React.Fragment key={tier.key}>
+                        {tierIndex > 0 && (
+                          <div
+                            className="graph-connector graph-connector--down"
+                            style={{ width: `${Math.max(tier.users.length - 1, 0) * 166}px` }}
+                            aria-hidden="true"
+                          >
+                            <span className="graph-connector-trunk" />
+                            <span className="graph-connector-bus" />
+                            {tier.users.map((person, index) => (
+                              <span
+                                className="graph-connector-branch"
+                                key={person.username}
+                                style={{ left: `${tier.users.length === 1 ? 50 : (index / (tier.users.length - 1)) * 100}%` }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        <div className={`graph-tier graph-tier--${tier.key}`}>
+                          {tier.users.map((person) => (
+                            <button type="button" key={person.username} onClick={() => { setSelectedPersonId(person.username); setCompanyGraphOpen(false); }}>
+                              <span>{person.name.slice(0, 1)}</span>
+                              <strong>{person.name}</strong>
+                              <small>{person.role}</small>
+                            </button>
+                          ))}
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </>
+                );
+              })()}
               </div>
             </div>
           </div>
-        </div>
       )}
     </section>
   );
 }
 
-function AuthPage({ onAuthenticated }) {
+function AuthPage({ onAuthenticated, wallpaperClass }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [wallpaperReady, setWallpaperReady] = useState(wallpaperClass !== 'wallpaper-default');
+
+  useEffect(() => {
+    if (wallpaperClass !== 'wallpaper-default') {
+      setWallpaperReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setWallpaperReady(false);
+    const image = new Image();
+    image.onload = () => {
+      if (!cancelled) setWallpaperReady(true);
+    };
+    image.onerror = () => {
+      if (!cancelled) setWallpaperReady(false);
+    };
+    image.src = '/Assests/ikhlas-Bkc-f-l8P-M-unsplash.jpg';
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallpaperClass]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -1737,8 +2916,27 @@ function AuthPage({ onAuthenticated }) {
     setErrorMessage('');
 
     try {
+      if (localDevBypass) {
+        const localUser = username.trim();
+        await onAuthenticated(
+          {
+            username: localUser,
+            firstName: localUser.split('@')[0] || 'Local',
+            displayName: localUser,
+            email: localUser.includes('@') ? localUser : '',
+            phone: '',
+            role: '',
+            description: '',
+            office: '',
+          },
+          'local-dev-token',
+        );
+        return;
+      }
+
       const response = await fetch(`${authApiBase}/api/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1753,7 +2951,7 @@ function AuthPage({ onAuthenticated }) {
         throw new Error(data.error || 'Unable to sign in.');
       }
 
-      onAuthenticated(data.profile, data.token);
+        await onAuthenticated(data.profile, data.csrfToken);
       setPassword('');
     } catch (error) {
       setErrorMessage(error.message || 'Unable to sign in.');
@@ -1764,12 +2962,9 @@ function AuthPage({ onAuthenticated }) {
 
   return (
     <main className="auth-shell" aria-label="AQMA sign in">
-      <div className="auth-background wallpaper-default" />
+      <div className={`auth-background ${wallpaperClass} ${wallpaperReady ? 'is-ready' : ''}`} />
       <section className="auth-card glass-panel">
         <div className="auth-brand">
-          <span className="auth-brand-mark" aria-hidden="true">
-            <ShieldCheck size={34} strokeWidth={1.9} />
-          </span>
           <h1>Sign in</h1>
         </div>
 
@@ -1814,28 +3009,34 @@ function AuthPage({ onAuthenticated }) {
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(sessionStorage.getItem('aqmaAuthToken')));
-  const [authToken, setAuthToken] = useState(() => sessionStorage.getItem('aqmaAuthToken') ?? '');
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [activeSubmenus, setActiveSubmenus] = useState({
-    dashboard: 'overview',
-    board: 'kanban',
-    analytics: 'metrics',
-    profile: 'profile-settings',
-  });
-  const [theme, setTheme] = useState('light');
-  const [wallpaper, setWallpaper] = useState('default');
+  const initialPreferences = useMemo(() => readLastUserPreferences(), []);
+  const [authToken, setAuthToken] = useState('');
+  const [authPhase, setAuthPhase] = useState(() => (localDevBypass || sessionStorage.getItem('aqmaSessionActive') ? 'hydrating' : 'signed-out'));
+  const [activeTab, setActiveTab] = useState(initialPreferences.navigation.activeTab);
+  const [activeSubmenus, setActiveSubmenus] = useState(initialPreferences.navigation.activeSubmenus);
+  const [theme, setTheme] = useState(initialPreferences.theme);
+  const [wallpaper, setWallpaper] = useState(initialPreferences.wallpaper);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
   const [selectedPersonId, setSelectedPersonId] = useState(null);
   const [companyGraphOpen, setCompanyGraphOpen] = useState(false);
   const [navigationHistory, setNavigationHistory] = useState([]);
+  const preferenceSaveTimerRef = useRef(null);
+  const preferencesApiAvailableRef = useRef(true);
+  const [preferenceError, setPreferenceError] = useState('');
   const [profile, setProfile] = useState({
-    name: 'Waleed',
-    role: 'AQMA Coordinator',
-    email: 'waleed@example.com',
-    phone: '+1 (555) 019-2846',
+    username: localDevBypass ? 'local-user' : '',
+    name: localDevBypass ? 'Local User' : 'User',
+    role: '',
+    email: '',
+    phone: '',
+    employeeId: '',
+    department: '',
+    company: '',
     description: '',
     office: '',
+    managerDn: '',
     avatar: { type: 'preset', value: 'blue' },
   });
 
@@ -1845,65 +3046,213 @@ function App() {
     return localName.split(/[._\-\s]+/).filter(Boolean)[0] || localName || 'User';
   }
 
-  function applyDirectoryProfile(directoryProfile) {
-    const firstName = directoryProfile?.firstName || getFirstNameFromLogin(directoryProfile?.email || directoryProfile?.username || '');
-    setProfile((current) => ({
-      ...current,
-      name: firstName,
-      role: directoryProfile?.role || current.role,
-      email: directoryProfile?.email || current.email,
-      phone: directoryProfile?.phone || 'Not available',
+  function directoryProfileToAppProfile(directoryProfile) {
+    const profileName =
+      directoryProfile?.displayName ||
+      directoryProfile?.firstName ||
+      getFirstNameFromLogin(directoryProfile?.email || directoryProfile?.username || '');
+    return {
+      username: directoryProfile?.username || '',
+      name: profileName,
+      role: directoryProfile?.role || '',
+      email: directoryProfile?.email || '',
+      phone: directoryProfile?.phone || '',
+      employeeId: directoryProfile?.employeeId || '',
+      department: directoryProfile?.department || '',
+      company: directoryProfile?.company || '',
       description: directoryProfile?.description || '',
       office: directoryProfile?.office || '',
-    }));
+      managerDn: directoryProfile?.managerDn || '',
+      avatar: defaultUserPreferences.avatar,
+    };
   }
 
-  function handleAuthenticated(directoryProfile, token) {
-    applyDirectoryProfile(directoryProfile);
+  async function authenticatedRequest(path, token = '', options = {}) {
+    const response = await fetch(`${authApiBase}${path}`, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        ...(token ? { 'X-CSRF-Token': token } : {}),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.headers ?? {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 401) notifyAuthExpired();
+      const error = new Error(data.error || 'Request failed.');
+      error.code = data.code;
+      throw error;
+    }
+    return data;
+  }
+
+  async function hydrateAuthenticatedUser(directoryProfile, token, localMode = false) {
+    setPreferenceError('');
+    const nextProfile = directoryProfileToAppProfile(directoryProfile);
+    const username = nextProfile.username || directoryProfile?.username || 'local-user';
+    try {
+      localStorage.setItem('aqmaLastUsername', username);
+    } catch {
+      // Last-user hint is only used to avoid signed-out wallpaper flicker.
+    }
+    const fallbackPreferences = readUserPreferences(username);
+    let preferences = fallbackPreferences;
+    let nextNotifications = readNotifications(username);
+    nextNotifications = mergeNotifications(nextNotifications, createProfileDiffNotifications(username, nextProfile));
+
+    if (!localMode) {
+      const [preferenceResult, ticketResult] = await Promise.allSettled([
+        authenticatedRequest('/api/preferences', token),
+        authenticatedRequest('/api/tickets?includeFiles=true', token),
+      ]);
+      if (preferenceResult.status === 'fulfilled') {
+        preferencesApiAvailableRef.current = true;
+        preferences = preferenceResult.value.preferences
+          ? sanitizeUserPreferences(preferenceResult.value.preferences)
+          : fallbackPreferences;
+        writeUserPreferences(username, preferences);
+      } else if (preferenceResult.reason?.code === 'PREFERENCES_UNAVAILABLE') {
+        preferencesApiAvailableRef.current = false;
+      } else {
+        setPreferenceError('Settings could not be synchronized. Local preferences are still active.');
+      }
+      if (ticketResult.status === 'fulfilled') {
+        const loadedTickets = ticketResult.value.tickets ?? [];
+        const diffNotifications = createTicketDiffNotifications(username, loadedTickets);
+        nextNotifications = mergeNotifications(nextNotifications, diffNotifications);
+        writeNotifications(username, nextNotifications);
+        writeBoardState(buildBoardState(loadedTickets, username));
+      }
+    }
+
+    writeNotifications(username, nextNotifications);
+    setNotifications(nextNotifications);
+    setProfile({ ...nextProfile, avatar: preferences.avatar });
+    setTheme(preferences.theme);
+    setWallpaper(preferences.wallpaper);
+    setActiveTab(preferences.navigation.activeTab);
+    setActiveSubmenus(preferences.navigation.activeSubmenus);
+    setNavigationHistory([]);
+    setAuthPhase('ready');
+  }
+
+  async function handleAuthenticated(directoryProfile, token) {
+    setAuthPhase('hydrating');
     if (token) {
-      sessionStorage.setItem('aqmaAuthToken', token);
+      sessionStorage.setItem('aqmaSessionActive', 'true');
       setAuthToken(token);
     }
-    setIsAuthenticated(true);
+    await hydrateAuthenticatedUser(directoryProfile, token, localDevBypass);
+  }
+
+  async function handleLogout() {
+    setUserMenuOpen(false);
+    if (!localDevBypass && authToken) {
+      await authenticatedRequest('/api/auth/logout', authToken, { method: 'POST' }).catch(() => {});
+    }
+    sessionStorage.removeItem('aqmaSessionActive');
+    sessionStorage.removeItem(userStorageKey('aqmaBoard', profile.username));
+    boardStateCache = null;
+    setAuthToken('');
+    setProfile({
+      username: '', name: 'User', role: '', email: '', phone: '', employeeId: '', department: '',
+      company: '', description: '', office: '', managerDn: '', avatar: defaultUserPreferences.avatar,
+    });
+    setAuthPhase('signed-out');
+  }
+
+  function expireSession() {
+    sessionStorage.removeItem('aqmaSessionActive');
+    sessionStorage.removeItem(userStorageKey('aqmaBoard', profile.username));
+    boardStateCache = null;
+    setAuthToken('');
+    setSelectedPersonId(null);
+    setCompanyGraphOpen(false);
+    setUserMenuOpen(false);
+    setNotificationOpen(false);
+    setProfile({
+      username: '', name: 'User', role: '', email: '', phone: '', employeeId: '', department: '',
+      company: '', description: '', office: '', managerDn: '', avatar: defaultUserPreferences.avatar,
+    });
+    setAuthPhase('signed-out');
   }
 
   useEffect(() => {
-    if (!authToken) return;
+    window.addEventListener(authExpiredEventName, expireSession);
+    return () => window.removeEventListener(authExpiredEventName, expireSession);
+  }, [profile.username]);
 
+  useEffect(() => {
+    if (!localDevBypass && authPhase === 'ready' && !authToken) {
+      expireSession();
+    }
+  }, [authPhase, authToken]);
+
+  useEffect(() => {
     let cancelled = false;
 
-    async function refreshProfile() {
+    async function restoreSession() {
+      if (localDevBypass) {
+        await hydrateAuthenticatedUser({ username: 'local-user', displayName: 'Local User' }, '', true);
+        return;
+      }
+      const sessionActive = sessionStorage.getItem('aqmaSessionActive') === 'true';
+      if (!sessionActive) {
+        setAuthPhase('signed-out');
+        return;
+      }
+
       try {
-        const response = await fetch(`${authApiBase}/api/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Session expired.');
-        }
-
+        const data = await authenticatedRequest('/api/auth/me');
         if (!cancelled) {
-          applyDirectoryProfile(data.profile);
-          setIsAuthenticated(true);
+          setAuthToken(data.csrfToken ?? '');
+          await hydrateAuthenticatedUser(data.profile, data.csrfToken ?? '');
         }
       } catch {
         if (!cancelled) {
-          sessionStorage.removeItem('aqmaAuthToken');
+          sessionStorage.removeItem('aqmaSessionActive');
           setAuthToken('');
-          setIsAuthenticated(false);
+          setAuthPhase('signed-out');
         }
       }
     }
 
-    refreshProfile();
+    restoreSession();
 
     return () => {
       cancelled = true;
     };
-  }, [authToken]);
+  }, []);
+
+  useEffect(() => {
+    if (authPhase !== 'ready' || !profile.username) return undefined;
+    const preferences = sanitizeUserPreferences({
+      theme,
+      wallpaper,
+      avatar: profile.avatar,
+      navigation: { activeTab, activeSubmenus },
+    });
+    writeUserPreferences(profile.username, preferences);
+
+    if (localDevBypass || !authToken || !preferencesApiAvailableRef.current) return undefined;
+    clearTimeout(preferenceSaveTimerRef.current);
+    preferenceSaveTimerRef.current = setTimeout(() => {
+      authenticatedRequest('/api/preferences', authToken, {
+        method: 'PUT',
+        body: JSON.stringify({ preferences }),
+      }).catch((error) => {
+        if (error.code === 'PREFERENCES_UNAVAILABLE') {
+          preferencesApiAvailableRef.current = false;
+        } else {
+          setPreferenceError('Settings could not be synchronized. Local preferences are still active.');
+          console.error('Preference save failed:', error.message);
+        }
+      });
+    }, 350);
+
+    return () => clearTimeout(preferenceSaveTimerRef.current);
+  }, [authPhase, authToken, profile.username, profile.avatar, theme, wallpaper, activeTab, activeSubmenus]);
 
   const tab = useMemo(() => {
     if (activeTab === 'profile') return profileTab;
@@ -1972,30 +3321,85 @@ function App() {
     setActiveSubmenus((current) => ({ ...current, [tab.id]: id }));
   }
 
-  if (!isAuthenticated) {
-    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  const unreadNotificationCount = notifications.filter((notification) => !notification.read).length;
+
+  function persistNotifications(nextNotifications, username = profile.username) {
+    const bounded = nextNotifications.slice(0, notificationLimit);
+    setNotifications(bounded);
+    writeNotifications(username, bounded);
+  }
+
+  function addNotification(payload) {
+    if (!profile.username) return;
+    const notification = createNotification(payload);
+    setNotifications((current) => {
+      const next = mergeNotifications(current, [notification]);
+      writeNotifications(profile.username, next);
+      return next;
+    });
+  }
+
+  function markNotificationRead(notificationId) {
+    persistNotifications(notifications.map((notification) =>
+      notification.id === notificationId ? { ...notification, read: true } : notification,
+    ));
+  }
+
+  function markAllNotificationsRead() {
+    persistNotifications(notifications.map((notification) => ({ ...notification, read: true })));
+  }
+
+  function clearNotifications() {
+    persistNotifications([]);
+  }
+
+  if (authPhase === 'hydrating') {
+    return (
+      <main className="app-hydration" aria-busy="true">
+        <div className={`background-image ${wallpaperClass}`} />
+        <span className="app-hydration-mark" />
+      </main>
+    );
+  }
+
+  if (authPhase !== 'ready') {
+    return <AuthPage onAuthenticated={handleAuthenticated} wallpaperClass={wallpaperClass} />;
   }
 
   return (
     <div className={`app-shell theme-${theme}`}>
       <div className={`background-image ${wallpaperClass}`} />
+      {preferenceError && <p className="app-global-error" role="alert">{preferenceError}</p>}
       <header className="page-header" aria-label="User header">
         <label className="top-search">
           <Search size={17} strokeWidth={2} />
           <input aria-label="Search" placeholder="Search" />
         </label>
-        <button className="notification-button has-notification" type="button" aria-label="Notifications">
-          <Bell size={20} strokeWidth={2.05} />
-        </button>
+        <NotificationCenter
+          notifications={notifications}
+          open={notificationOpen}
+          unreadCount={unreadNotificationCount}
+          onToggle={() => {
+            setNotificationOpen((open) => !open);
+            setUserMenuOpen(false);
+          }}
+          onClose={() => setNotificationOpen(false)}
+          onMarkAllRead={markAllNotificationsRead}
+          onMarkRead={markNotificationRead}
+          onClear={clearNotifications}
+        />
         <div className="profile-menu-wrap">
           <button
             className="profile-header-group"
             type="button"
             aria-haspopup="menu"
             aria-expanded={userMenuOpen}
-            onClick={() => setUserMenuOpen((open) => !open)}
+            onClick={() => {
+              setUserMenuOpen((open) => !open);
+              setNotificationOpen(false);
+            }}
           >
-          <span className="user-name">{profile.name || 'User'}</span>
+            <span className="user-name">{profile.name || 'User'}</span>
             <span className="profile-avatar profile-avatar--page" aria-hidden="true">
               {profile.avatar?.type === 'image' ? <AvatarView avatar={profile.avatar} size={24} /> : <CircleUserRound size={24} strokeWidth={2.1} />}
             </span>
@@ -2009,12 +3413,7 @@ function App() {
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  sessionStorage.removeItem('aqmaAuthToken');
-                  setAuthToken('');
-                  setIsAuthenticated(false);
-                }}
+                onClick={handleLogout}
               >
                 <LogOut size={18} />
                 <span>Logout</span>
@@ -2053,6 +3452,9 @@ function App() {
         companyGraphOpen={companyGraphOpen}
         setCompanyGraphOpen={setCompanyGraphOpen}
         pushHistory={pushHistory}
+        authToken={authToken}
+        localMode={localDevBypass}
+        onNotify={addNotification}
       />
     </div>
   );
