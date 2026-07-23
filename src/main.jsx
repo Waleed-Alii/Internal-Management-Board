@@ -1072,6 +1072,7 @@ function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify, i
 
   async function addTicketComment(ticketId, text) {
     boardRevisionRef.current += 1;
+    setBoardError('');
     if (localMode) {
       updateTicket(ticketId, (ticket) => {
         const commentList = ticket.commentList ?? [];
@@ -1120,7 +1121,6 @@ function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify, i
         selfAuthored: true,
       });
     } catch (error) {
-      setBoardError(error.message);
       throw error;
     }
   }
