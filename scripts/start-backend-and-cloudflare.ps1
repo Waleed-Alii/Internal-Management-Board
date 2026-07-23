@@ -2,7 +2,8 @@ param(
   [int]$BackendPort = 8787,
   [string]$CloudflaredPath = "",
   [switch]$UpdateVercel,
-  [switch]$DeployVercel
+  [switch]$DeployVercel,
+  [string]$VercelToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,9 +39,14 @@ function Resolve-Cloudflared {
 function Invoke-Vercel {
   param([string[]]$Arguments)
 
-  & npx.cmd vercel @Arguments
+  $allArguments = @("vercel") + $Arguments
+  if ($VercelToken) {
+    $allArguments += @("--token", $VercelToken)
+  }
+
+  & npx.cmd @allArguments
   if ($LASTEXITCODE -ne 0) {
-    throw "Vercel command failed: npx.cmd vercel $($Arguments -join ' ')"
+    throw "Vercel command failed: npx.cmd $($allArguments -join ' ')"
   }
 }
 
