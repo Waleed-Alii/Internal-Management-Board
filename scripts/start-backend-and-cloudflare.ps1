@@ -39,14 +39,15 @@ function Resolve-Cloudflared {
 function Invoke-Vercel {
   param([string[]]$Arguments)
 
-  $allArguments = @("vercel") + $Arguments
+  $vercelVersion = "56.5.0"
+  $allArguments = @("exec", "--yes", "--package", "vercel@$vercelVersion", "--", "vercel") + $Arguments
   if ($VercelToken) {
     $allArguments += @("--token", $VercelToken)
   }
 
-  & npx.cmd --yes @allArguments
+  & npm.cmd @allArguments
   if ($LASTEXITCODE -ne 0) {
-    throw "Vercel command failed: npx.cmd --yes $($allArguments -join ' ')"
+    throw "Vercel command failed: npm.cmd $($allArguments -join ' ')"
   }
 }
 
