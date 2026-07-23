@@ -44,6 +44,16 @@ function Invoke-Vercel {
   }
 }
 
+function Get-LogText {
+  param([string[]]$Paths)
+
+  $content = Get-Content $Paths -ErrorAction SilentlyContinue
+  if (!$content) {
+    return "(no log output)"
+  }
+  return ($content | Select-Object -Last 120) -join [Environment]::NewLine
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $backendUrl = "http://127.0.0.1:$BackendPort"
 $cloudflared = Resolve-Cloudflared $CloudflaredPath
@@ -51,6 +61,7 @@ $cloudflared = Resolve-Cloudflared $CloudflaredPath
 Write-Host "Starting AQMA backend on $backendUrl..."
 $apiOut = Join-Path $repoRoot "api-local.log"
 $apiErr = Join-Path $repoRoot "api-local.err.log"
+Remove-Item $apiOut, $apiErr -ErrorAction SilentlyContinue
 $apiProcess = Start-Process `
   -FilePath npm.cmd `
   -ArgumentList @("run", "dev:api") `
@@ -62,16 +73,26 @@ $apiProcess = Start-Process `
 
 try {
   $deadline = (Get-Date).AddSeconds(30)
+  $healthy = $false
   do {
+    if ($apiProcess.HasExited) {
+      $log = Get-LogText @($apiOut, $apiErr)
+      throw "Backend exited before /api/health became available. Exit code: $($apiProcess.ExitCode)`n$log"
+    }
+
     try {
       Invoke-RestMethod "$backendUrl/api/health" | Out-Null
+      $healthy = $true
       break
     } catch {
       Start-Sleep -Seconds 1
     }
   } while ((Get-Date) -lt $deadline)
 
-  Invoke-RestMethod "$backendUrl/api/health" | Out-Null
+  if (!$healthy) {
+    $log = Get-LogText @($apiOut, $apiErr)
+    throw "Backend health check failed at $backendUrl/api/health after 30 seconds.`n$log"
+  }
 
   Write-Host "Starting Cloudflare tunnel..."
   $tunnelOut = Join-Path $env:TEMP "aqma-cloudflared-out.log"
@@ -117,6 +138,10 @@ try {
       Write-Host "Setting VITE_AUTH_API_URL for $environment..."
       Invoke-Vercel @("env", "add", "VITE_AUTH_API_URL", $environment, "--value", $tunnelUrl, "--force", "--yes")
     }
+
+    Write-Host "Setting backend cookie mode for Cloudflare tunnel..."
+    Invoke-Vercel @("env", "add", "SESSION_COOKIE_SAMESITE", "production", "--value", "None", "--force", "--yes")
+    Invoke-Vercel @("env", "add", "SESSION_COOKIE_SECURE", "production", "--value", "true", "--force", "--yes")
   }
 
   if ($DeployVercel) {
