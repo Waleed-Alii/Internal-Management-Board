@@ -44,9 +44,9 @@ function Invoke-Vercel {
     $allArguments += @("--token", $VercelToken)
   }
 
-  & npx.cmd @allArguments
+  & npx.cmd --yes @allArguments
   if ($LASTEXITCODE -ne 0) {
-    throw "Vercel command failed: npx.cmd $($allArguments -join ' ')"
+    throw "Vercel command failed: npx.cmd --yes $($allArguments -join ' ')"
   }
 }
 
