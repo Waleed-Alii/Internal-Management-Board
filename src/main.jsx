@@ -358,6 +358,13 @@ function ticketSnapshotForNotifications(ticket) {
   };
 }
 
+function isTicketRelevantToUser(ticketSnapshot, username) {
+  const normalized = normalizedUsername(username);
+  if (!normalized) return false;
+  return normalizedUsername(ticketSnapshot?.ownerUsername) === normalized
+    || normalizedUsername(ticketSnapshot?.assignedToUsername) === normalized;
+}
+
 function readTicketNotificationSnapshot(username) {
   if (!username) return null;
   try {
@@ -449,6 +456,8 @@ function createTicketDiffNotifications(username, tickets) {
   return (tickets ?? []).flatMap((ticket) => {
     const previous = previousSnapshot[ticket.id];
     const next = ticketSnapshotForNotifications(ticket);
+    const relevant = isTicketRelevantToUser(next, username) || isTicketRelevantToUser(previous, username);
+    if (!relevant) return [];
     if (!previous) {
       return [
         createNotification({
@@ -690,6 +699,7 @@ function MainInterface({
   authToken,
   localMode,
   onNotify,
+  teamUsers,
 }) {
   return (
     <main className="main-interface glass-panel" aria-live="polite">
@@ -710,17 +720,18 @@ function MainInterface({
           authToken={authToken}
           localMode={localMode}
           onNotify={onNotify}
+          teamUsers={teamUsers}
         />
       ) : (
-        <DefaultPanel tab={tab} submenu={submenu} profile={profile} authToken={authToken} localMode={localMode} onNotify={onNotify} />
+        <DefaultPanel tab={tab} submenu={submenu} profile={profile} authToken={authToken} localMode={localMode} onNotify={onNotify} teamUsers={teamUsers} />
       )}
     </main>
   );
 }
 
-function DefaultPanel({ tab, submenu, profile, authToken, localMode, onNotify }) {
+function DefaultPanel({ tab, submenu, profile, authToken, localMode, onNotify, teamUsers }) {
   if (tab.id === 'board') {
-    return <ProjectBoardPanel submenu={submenu} profile={profile} authToken={authToken} localMode={localMode} onNotify={onNotify} />;
+    return <ProjectBoardPanel submenu={submenu} profile={profile} authToken={authToken} localMode={localMode} onNotify={onNotify} initialTeamUsers={teamUsers} />;
   }
 
   const title = submenu ? submenu.label : tab.title;
@@ -734,7 +745,7 @@ function DefaultPanel({ tab, submenu, profile, authToken, localMode, onNotify })
   );
 }
 
-function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify }) {
+function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify, initialTeamUsers = [] }) {
   const currentUserName = profile?.name || 'User';
   const currentUsername = profile?.username || '';
   const initialBoardState = readBoardState(currentUsername);
@@ -748,14 +759,16 @@ function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify })
   const [createColumnId, setCreateColumnId] = useState(null);
   const ticketMutationVersionRef = useRef(new Map());
   const boardRevisionRef = useRef(0);
-  const [teamUsers, setTeamUsers] = useState(() => [
-    {
-      username: profile?.username || profile?.email || currentUserName,
-      name: currentUserName,
-      email: profile?.email || '',
-      role: profile?.role || '',
-    },
-  ]);
+  const [teamUsers, setTeamUsers] = useState(() => (
+    initialTeamUsers.length > 0
+      ? initialTeamUsers
+      : [{
+          username: profile?.username || profile?.email || currentUserName,
+          name: currentUserName,
+          email: profile?.email || '',
+          role: profile?.role || '',
+        }]
+  ));
   const users = useMemo(
     () =>
       Array.from(
@@ -770,6 +783,12 @@ function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify })
       ).sort(),
     [boardColumns, teamUsers],
   );
+
+  useEffect(() => {
+    if (initialTeamUsers.length > 0) {
+      setTeamUsers(initialTeamUsers);
+    }
+  }, [initialTeamUsers]);
   const nextTicketId = useMemo(() => {
     const ticketIds = [
       ...boardColumns.flatMap((column) => column.cards.map((card) => card.id)),
@@ -1047,7 +1066,6 @@ function ProjectBoardPanel({ submenu, profile, authToken, localMode, onNotify })
         selfAuthored: true,
       });
     } catch (error) {
-      setBoardError(error.message);
       throw error;
     }
   }
@@ -3019,6 +3037,7 @@ function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [directoryUsers, setDirectoryUsers] = useState([]);
   const [selectedPersonId, setSelectedPersonId] = useState(null);
   const [companyGraphOpen, setCompanyGraphOpen] = useState(false);
   const [navigationHistory, setNavigationHistory] = useState([]);
@@ -3102,9 +3121,10 @@ function App() {
     nextNotifications = mergeNotifications(nextNotifications, createProfileDiffNotifications(username, nextProfile));
 
     if (!localMode) {
-      const [preferenceResult, ticketResult] = await Promise.allSettled([
+      const [preferenceResult, ticketResult, teamResult] = await Promise.allSettled([
         authenticatedRequest('/api/preferences', token),
         authenticatedRequest('/api/tickets?includeFiles=true', token),
+        authenticatedRequest('/api/team', token),
       ]);
       if (preferenceResult.status === 'fulfilled') {
         preferencesApiAvailableRef.current = true;
@@ -3123,6 +3143,11 @@ function App() {
         nextNotifications = mergeNotifications(nextNotifications, diffNotifications);
         writeNotifications(username, nextNotifications);
         writeBoardState(buildBoardState(loadedTickets, username));
+      }
+      if (teamResult.status === 'fulfilled') {
+        setDirectoryUsers((teamResult.value.users ?? []).filter((user) => !isHiddenDirectoryUser(user)));
+      } else {
+        setDirectoryUsers([]);
       }
     }
 
@@ -3155,6 +3180,7 @@ function App() {
     sessionStorage.removeItem(userStorageKey('aqmaBoard', profile.username));
     boardStateCache = null;
     setAuthToken('');
+    setDirectoryUsers([]);
     setProfile({
       username: '', name: 'User', role: '', email: '', phone: '', employeeId: '', department: '',
       company: '', description: '', office: '', managerDn: '', avatar: defaultUserPreferences.avatar,
@@ -3169,6 +3195,7 @@ function App() {
     setAuthToken('');
     setSelectedPersonId(null);
     setCompanyGraphOpen(false);
+    setDirectoryUsers([]);
     setUserMenuOpen(false);
     setNotificationOpen(false);
     setProfile({
@@ -3455,6 +3482,7 @@ function App() {
         authToken={authToken}
         localMode={localDevBypass}
         onNotify={addNotification}
+        teamUsers={directoryUsers}
       />
     </div>
   );

@@ -1491,8 +1491,8 @@ app.post('/api/tickets/:ticketId/comments', requireAuth, async (request, respons
     response.status(500).json({ error: 'Unable to add comment.' });
     return;
   }
-  if (!canOperateOnTicket(ticket, request.auth)) {
-    response.status(403).json({ error: 'Only the opener or assignee can comment on this ticket.' });
+  if (!canReadTicket(ticket, request.auth)) {
+    response.status(403).json({ error: 'You are not allowed to comment on this ticket.' });
     return;
   }
 
